@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Scan Test 5 — Official ZXing Browser</title>
+<style>
+body{margin:0;background:#0f0f0f;color:#fff;font-family:system-ui,sans-serif;padding:16px}
+h2{font-size:16px;margin:0 0 4px;color:#22d3ee}
+.sub{font-size:11px;color:#6b7280;margin-bottom:12px;line-height:1.5}
+.sub code{background:#1f2937;padding:1px 5px;border-radius:4px;color:#22d3ee}
+#camWrap{position:relative;width:100%;aspect-ratio:16/9;background:#1a1a1a;border-radius:10px;overflow:hidden}
+video{width:100%;height:100%;object-fit:cover;display:block}
+#overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.aimbox{width:88%;height:55%;border:2px solid #22d3ee;border-radius:6px;box-shadow:0 0 0 9999px rgba(0,0,0,.4)}
+#statusTag{position:absolute;top:8px;left:8px;background:rgba(0,0,0,.7);color:#22d3ee;font-size:11px;padding:4px 10px;border-radius:20px;font-family:monospace}
+#torchBtn{position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.3);border-radius:6px;color:white;font-size:11px;padding:5px 10px;cursor:pointer}
+#deviceSelect{width:100%;margin-top:10px;background:#1f2937;color:#fff;border:1px solid #374151;border-radius:8px;padding:10px;font-size:13px}
+#log{background:#111;border-radius:8px;padding:10px;margin-top:12px;font-size:12px;font-family:monospace;min-height:100px;max-height:220px;overflow-y:auto;border:1px solid #222}
+#result{background:#052e16;border:1.5px solid #16a34a;border-radius:8px;padding:12px;margin-top:12px;display:none}
+#result .label{font-size:11px;color:#4ade80;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+#result .val{font-size:14px;color:#fff;word-break:break-all;line-height:1.6}
+.badge{display:inline-block;background:#0e7490;color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;margin-bottom:8px}
+.histRow{font-size:11px;color:#6b7280;border-top:1px solid #1f2937;padding-top:6px;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="badge">TEST 5 — OFFICIAL ZXING</div>
+<h2>@zxing/browser — decodeFromConstraints</h2>
+<div class="sub">
+This is ZXing's own documented browser API, not a custom canvas loop. <code>BrowserMultiFormatReader</code> calls <code>getUserMedia</code> internally and runs its own scan loop directly against the live &lt;video&gt; element. Architecturally different from every previous attempt.
+</div>
+
+<div id="camWrap">
+  <video id="vid" muted playsinline></video>
+  <div id="overlay"><div class="aimbox"></div></div>
+  <div id="statusTag">Loading library…</div>
+  <button id="torchBtn" onclick="toggleTorch()">Torch</button>
+</div>
+
+<select id="deviceSelect"><option>Detecting cameras…</option></select>
+
+<div id="result">
+  <div class="label">✓ Scanned Successfully</div>
+  <div class="val" id="resultText"></div>
+  <div class="histRow" id="histRow"></div>
+</div>
+<div id="log"></div>
+
+<script src="https://unpkg.com/@zxing/browser@latest"></script>
+<script>
+const logEl=document.getElementById('log');
+const stag=document.getElementById('statusTag');
+let lastVal='', lastTime=0, attempts=0, scanHistory=[], controls=null;
+
+function log(t,col){
+  const d=document.createElement('div');
+  d.style.color=col||(t.startsWith('✓')?'#4ade80':t.startsWith('✗')?'#f87171':'#9ca3af');
+  d.textContent=new Date().toLocaleTimeString()+' '+t;
+  logEl.appendChild(d); logEl.scrollTop=logEl.scrollHeight;
+  console.log('[ZXingBrowser]',t);
+}
+function setStatus(t){ stag.textContent=t; }
+
+function showResult(text){
+  const now=Date.now();
+  if(text===lastVal && now-lastTime<3000) return;
+  lastVal=text; lastTime=now;
+  log('✓ DECODED: '+text.substring(0,100),'#4ade80');
+  document.getElementById('result').style.display='block';
+  document.getElementById('resultText').textContent=text;
+  scanHistory.unshift(new Date().toLocaleTimeString()+': '+text.substring(0,40));
+  document.getElementById('histRow').textContent='Prior scans: '+scanHistory.slice(1,4).join(' | ');
+  if(navigator.vibrate) navigator.vibrate([60,30,60]);
+}
+
+let trackRef=null, torchOn=false;
+async function toggleTorch(){
+  if(!trackRef) return;
+  try{
+    torchOn=!torchOn;
+    await trackRef.applyConstraints({advanced:[{torch:torchOn}]});
+    document.getElementById('torchBtn').textContent=torchOn?'Torch ON':'Torch';
+  }catch(e){ log('Torch not supported: '+e.message); }
+}
+
+async function start(){
+  if(typeof ZXingBrowser==='undefined'){
+    log('✗ @zxing/browser failed to load — check internet','#f87171');
+    setStatus('Load failed');
+    return;
+  }
+  log('✓ ZXingBrowser global loaded');
+  setStatus('Configuring formats…');
+
+  // Build hints — explicit PDF417 + common fallbacks, exactly as ZXing docs show.
+  // The exact export shape of BarcodeFormat/DecodeHintType on the UMD bundle
+  // isn't guaranteed across versions, so we probe several known locations
+  // and log which one (if any) worked, rather than assuming silently.
+  const hints = new Map();
+  const ZX = window.ZXingBrowser;
+  let BarcodeFormat, DecodeHintType, foundVia='none';
+
+  const candidates = [
+    ['ZXingBrowser.BarcodeFormat', ()=>ZX.BarcodeFormat, ()=>ZX.DecodeHintType],
+    ['window.ZXing', ()=>window.ZXing && window.ZXing.BarcodeFormat, ()=>window.ZXing && window.ZXing.DecodeHintType],
+    ['ZXingBrowser.ZXing', ()=>ZX.ZXing && ZX.ZXing.BarcodeFormat, ()=>ZX.ZXing && ZX.ZXing.DecodeHintType],
+    ['ZXingBrowser.default', ()=>ZX.default && ZX.default.BarcodeFormat, ()=>ZX.default && ZX.default.DecodeHintType]
+  ];
+  for(const [label, getFmt, getHint] of candidates){
+    try{
+      const f=getFmt(), h=getHint();
+      if(f && h && typeof f.PDF_417!=='undefined'){
+        BarcodeFormat=f; DecodeHintType=h; foundVia=label; break;
+      }
+    }catch(e){}
+  }
+
+  log('Namespace keys on ZXingBrowser: '+Object.keys(ZX).slice(0,15).join(', '));
+
+  if(BarcodeFormat && DecodeHintType){
+    hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+      BarcodeFormat.PDF_417,
+      BarcodeFormat.CODE_128,
+      BarcodeFormat.QR_CODE,
+      BarcodeFormat.DATA_MATRIX,
+      BarcodeFormat.EAN_13
+    ]);
+    hints.set(DecodeHintType.TRY_HARDER, true);
+    log('✓ Hints set via '+foundVia+': PDF417+CODE128+QR+DATAMATRIX+EAN13, TRY_HARDER=true');
+  } else {
+    log('Could not locate BarcodeFormat/DecodeHintType on any known path — reader will use its built-in defaults, which still scan PDF417 (just without the TRY_HARDER hint). Not a blocker.','#fbbf24');
+  }
+
+  // Official constructor pattern: new BrowserMultiFormatReader(hints, timeBetweenScansMillis)
+  const codeReader = new ZX.BrowserMultiFormatReader(hints, 100);
+  log('✓ BrowserMultiFormatReader created (100ms between scans)');
+  setStatus('Listing cameras…');
+
+  // IMPORTANT: device labels (needed to auto-detect "back"/"environment" camera)
+  // are blank until getUserMedia has been granted at least once in this session.
+  // On a cold load with no prior permission, listVideoInputDevices() would return
+  // unlabeled devices and silently default to index 0 — often the FRONT camera
+  // on phones. We warm up permission first so labels are populated correctly.
+  setStatus('Requesting camera permission…');
+  try{
+    const warm = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}, audio:false});
+    warm.getTracks().forEach(t=>t.stop());
+    log('✓ Permission granted — device labels will now be populated');
+  }catch(e){
+    log('✗ Camera permission denied: '+e.message,'#f87171');
+    setStatus('Permission denied');
+    return;
+  }
+
+  // List devices using ZXing's own helper
+  let devices;
+  try{
+    devices = await ZX.BrowserCodeReader.listVideoInputDevices();
+    log('✓ Found '+devices.length+' camera(s): '+devices.map(d=>d.label||'(unlabeled)').join(' | '));
+  }catch(e){
+    log('✗ listVideoInputDevices failed: '+e.message,'#f87171');
+    setStatus('No cameras found');
+    return;
+  }
+
+  const sel=document.getElementById('deviceSelect');
+  sel.innerHTML='';
+  let backCamFound=false;
+  devices.forEach((d,i)=>{
+    const opt=document.createElement('option');
+    opt.value=d.deviceId;
+    opt.textContent=d.label || ('Camera '+(i+1));
+    if(/back|rear|environment/i.test(d.label)){ opt.selected=true; backCamFound=true; }
+    sel.appendChild(opt);
+  });
+  if(!backCamFound && devices.length>1){
+    // Heuristic fallback: on most phones the back camera is the LAST device
+    // in the list when label-matching fails (front camera is usually listed first)
+    sel.selectedIndex = devices.length-1;
+    log('No label matched "back/rear/environment" — defaulting to last device in list (usual back-camera position)','#fbbf24');
+  }
+
+  async function runWithDevice(deviceId){
+    if(controls){ try{controls.stop();}catch(e){} controls=null; }
+    setStatus('Starting camera…');
+    const previewElem = document.getElementById('vid');
+    try{
+      // THE OFFICIAL PATTERN — ZXing owns the video element + stream internally
+      controls = await codeReader.decodeFromVideoDevice(deviceId, previewElem, (result, error, ctrls) => {
+        attempts++;
+        if(attempts % 30 === 0) setStatus('Scanning… ('+attempts+' attempts)');
+        if(result){
+          showResult(result.getText());
+          setStatus('Got scan! Resuming…');
+          setTimeout(()=>setStatus('Scanning…'),1500);
+        }
+        if(error && error.name && !error.name.includes('NotFoundException')){
+          // NotFoundException fires every frame with no barcode — that's normal, ignore it
+          log('decode err: '+error.name+' '+String(error.message||'').substring(0,40));
+        }
+      });
+      log('✓ decodeFromVideoDevice running on deviceId='+(deviceId||'default'));
+      setStatus('Scanning…');
+
+      // Grab track ref for torch control
+      if(previewElem.srcObject){
+        const tracks=previewElem.srcObject.getVideoTracks();
+        if(tracks[0]) trackRef=tracks[0];
+      }
+    }catch(e){
+      log('✗ decodeFromVideoDevice failed: '+e.message,'#f87171');
+      setStatus('Camera error');
+    }
+  }
+
+  sel.addEventListener('change', ()=>runWithDevice(sel.value));
+
+  // Start with selected (or first) device
+  const initialId = sel.value || (devices[0] && devices[0].deviceId);
+  runWithDevice(initialId);
+}
+
+window.addEventListener('load', start);
+</script>
+</body>
+</html>
