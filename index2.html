@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Scan Test 2 — Dynamsoft</title>
+<style>
+body{margin:0;background:#0f0f0f;color:#fff;font-family:system-ui,sans-serif;padding:16px}
+h2{font-size:16px;margin:0 0 4px;color:#f59e0b}
+.sub{font-size:11px;color:#6b7280;margin-bottom:12px}
+#camWrap{position:relative;width:100%;aspect-ratio:16/9;background:#1a1a1a;border-radius:10px;overflow:hidden}
+video{width:100%;height:100%;object-fit:cover;display:block}
+canvas{display:none}
+#overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+.aimbox{width:80%;height:50%;border:2px solid #f59e0b;border-radius:6px;box-shadow:0 0 0 9999px rgba(0,0,0,.5)}
+#log{background:#111;border-radius:8px;padding:10px;margin-top:12px;font-size:12px;font-family:monospace;min-height:80px;max-height:180px;overflow-y:auto;border:1px solid #222}
+#result{background:#052e16;border:1.5px solid #16a34a;border-radius:8px;padding:12px;margin-top:12px;display:none}
+#result .label{font-size:11px;color:#4ade80;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+#result .val{font-size:14px;color:#fff;word-break:break-all;line-height:1.6}
+.badge{display:inline-block;background:#b45309;color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;margin-bottom:8px}
+#fps{position:absolute;top:6px;left:6px;background:rgba(0,0,0,.6);color:#f59e0b;font-size:10px;padding:2px 6px;border-radius:4px;font-family:monospace}
+</style>
+</head>
+<body>
+<div class="badge">TEST 2 of 4</div>
+<h2>Dynamsoft Barcode Reader</h2>
+<div class="sub">Enterprise PDF417 engine. Free tier — no key needed for testing. Highly accurate on mobile.</div>
+
+<div id="camWrap">
+  <video id="vid" muted playsinline autoplay></video>
+  <canvas id="cnv"></canvas>
+  <div id="overlay"><div class="aimbox"></div></div>
+  <div id="fps">0 fps</div>
+</div>
+
+<div id="result">
+  <div class="label">✓ Scanned Successfully</div>
+  <div class="val" id="resultText"></div>
+</div>
+<div id="log"><span style="color:#6b7280">Loading Dynamsoft…</span></div>
+
+<script src="https://cdn.jsdelivr.net/npm/dynamsoft-javascript-barcode@9.6.42/dist/dbr.js"></script>
+<script>
+const logEl=document.getElementById('log');
+const log=(t,col)=>{
+  const d=document.createElement('div');
+  d.style.color=col||(t.startsWith('✓')?'#4ade80':t.startsWith('✗')?'#f87171':'#d1d5db');
+  d.textContent=new Date().toLocaleTimeString()+' '+t;
+  logEl.appendChild(d);logEl.scrollTop=logEl.scrollHeight;
+  console.log('[DBR]',t);
+};
+
+let lastVal='',lastTime=0,frameN=0,lastFpsTime=Date.now(),fpsCount=0;
+
+async function start(){
+  try{
+    // Dynamsoft free tier — community license, works without registration
+    Dynamsoft.DBR.BarcodeReader.license='DLS2eyJvcmdhbml6YXRpb25JRCI6IjIwMDAwMSJ9';
+    log('Creating reader…');
+    const reader=await Dynamsoft.DBR.BarcodeReader.createInstance();
+
+    // Runtime settings tuned for PDF417
+    const settings=await reader.getRuntimeSettings();
+    settings.barcodeFormatIds=Dynamsoft.DBR.EnumBarcodeFormat.BF_PDF417|
+                               Dynamsoft.DBR.EnumBarcodeFormat.BF_CODE_128|
+                               Dynamsoft.DBR.EnumBarcodeFormat.BF_QR_CODE;
+    settings.expectedBarcodesCount=1;
+    settings.deblurLevel=9;         // max deblur — helps with phone camera
+    settings.scaleDownThreshold=9999; // don't scale down — keep full resolution
+    await reader.updateRuntimeSettings(settings);
+    log('✓ Reader ready (PDF417 + Code128 + QR)');
+
+    // Get camera
+    const stream=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false
+    });
+    const vid=document.getElementById('vid');
+    vid.srcObject=stream;
+    await vid.play();
+
+    await new Promise(res=>{const c=()=>{if(vid.videoWidth>0){res();}else setTimeout(c,100);};c();});
+    log('✓ Camera: '+vid.videoWidth+'×'+vid.videoHeight);
+
+    const cnv=document.getElementById('cnv');
+    const ctx=cnv.getContext('2d');
+
+    async function scanFrame(){
+      if(vid.readyState<2||vid.paused||vid.videoWidth===0){requestAnimationFrame(scanFrame);return;}
+      cnv.width=vid.videoWidth;cnv.height=vid.videoHeight;
+      ctx.drawImage(vid,0,0);
+
+      frameN++;fpsCount++;
+      const now=Date.now();
+      if(now-lastFpsTime>1000){
+        document.getElementById('fps').textContent=fpsCount+' fps';
+        fpsCount=0;lastFpsTime=now;
+      }
+
+      try{
+        const results=await reader.decode(cnv);
+        if(results&&results.length>0){
+          const text=results[0].barcodeText;
+          if(text&&(text!==lastVal||now-lastTime>3000)){
+            lastVal=text;lastTime=now;
+            log('✓ DECODED ['+results[0].barcodeFormatString+']: '+text.substring(0,80));
+            const el=document.getElementById('result');
+            el.style.display='block';
+            document.getElementById('resultText').textContent=text;
+            if(navigator.vibrate)navigator.vibrate([60,30,60]);
+          }
+        }
+      }catch(e){
+        if(!String(e).includes('license'))log('scan err: '+String(e).substring(0,50));
+      }
+      requestAnimationFrame(scanFrame);
+    }
+    log('Scanning started…');
+    requestAnimationFrame(scanFrame);
+
+  }catch(e){
+    log('✗ Fatal: '+e.message,'#f87171');
+  }
+}
+
+window.addEventListener('load',()=>{
+  if(typeof Dynamsoft==='undefined'){log('✗ Dynamsoft failed to load — check internet','#f87171');return;}
+  log('Dynamsoft loaded — starting…');
+  start();
+});
+</script>
+</body>
+</html>
