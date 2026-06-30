@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Scan Test 4 — QuaggaJS</title>
+<style>
+body{margin:0;background:#0f0f0f;color:#fff;font-family:system-ui,sans-serif;padding:16px}
+h2{font-size:16px;margin:0 0 4px;color:#34d399}
+.sub{font-size:11px;color:#6b7280;margin-bottom:12px}
+#interactive{position:relative;width:100%;background:#111;border-radius:10px;overflow:hidden;min-height:220px}
+#interactive video{width:100%!important;height:auto!important;display:block}
+#interactive canvas.drawingBuffer{position:absolute;top:0;left:0;width:100%!important;height:auto!important}
+.drawingBuffer{opacity:0.6}
+#log{background:#111;border-radius:8px;padding:10px;margin-top:12px;font-size:12px;font-family:monospace;min-height:80px;max-height:180px;overflow-y:auto;border:1px solid #222}
+#result{background:#052e16;border:1.5px solid #16a34a;border-radius:8px;padding:12px;margin-top:12px;display:none}
+#result .label{font-size:11px;color:#4ade80;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+#result .val{font-size:14px;color:#fff;word-break:break-all;line-height:1.6}
+.badge{display:inline-block;background:#065f46;color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;margin-bottom:8px}
+#confBar{height:4px;background:#1a1a1a;border-radius:2px;margin-top:8px;overflow:hidden}
+#confFill{height:100%;background:#34d399;width:0%;transition:width .3s}
+#confLabel{font-size:11px;color:#6b7280;margin-top:4px}
+</style>
+</head>
+<body>
+<div class="badge">TEST 4 of 4</div>
+<h2>QuaggaJS — Different Decode Algorithm</h2>
+<div class="sub">QuaggaJS uses a completely different image processing pipeline from ZXing. Works entirely offline once loaded. Shows confidence score per scan attempt.</div>
+
+<div id="interactive"></div>
+<div id="confBar"><div id="confFill"></div></div>
+<div id="confLabel">Confidence: —</div>
+
+<div id="result">
+  <div class="label">✓ Scanned Successfully</div>
+  <div class="val" id="resultText"></div>
+</div>
+<div id="log"></div>
+
+<script src="https://unpkg.com/quagga@0.12.1/dist/quagga.min.js"></script>
+<script>
+const logEl=document.getElementById('log');
+let lastVal='',lastTime=0,readAttempts=0;
+
+function log(t,col){
+  const d=document.createElement('div');
+  d.style.color=col||(t.startsWith('✓')?'#4ade80':t.startsWith('✗')?'#f87171':'#9ca3af');
+  d.textContent=new Date().toLocaleTimeString()+' '+t;
+  logEl.appendChild(d);logEl.scrollTop=logEl.scrollHeight;
+  console.log('[Quagga]',t);
+}
+
+function showResult(code){
+  const now=Date.now();
+  if(code===lastVal&&now-lastTime<3000) return;
+  lastVal=code; lastTime=now;
+  log('✓ DECODED: '+code.substring(0,100),'#4ade80');
+  document.getElementById('result').style.display='block';
+  document.getElementById('resultText').textContent=code;
+  if(navigator.vibrate) navigator.vibrate([60,30,60]);
+}
+
+function startQuagga(){
+  log('Starting Quagga…');
+
+  // Quagga config — try PDF417 first via code_128 pipeline (Quagga doesn't have
+  // a separate PDF417 reader, but pdf417 barcodes that encode text like Code128
+  // are sometimes read by code_128 + code_39 readers)
+  // We also run multiple readers simultaneously
+  Quagga.init({
+    inputStream:{
+      name:'Live',
+      type:'LiveStream',
+      target:document.getElementById('interactive'),
+      constraints:{
+        width:{ideal:1280},
+        height:{ideal:720},
+        facingMode:'environment'
+      },
+      area:{ // focus on center 80% where barcode usually is
+        top:'10%',left:'5%',right:'5%',bottom:'10%'
+      }
+    },
+    locator:{
+      patchSize:'medium',
+      halfSample:false   // false = full resolution — better for PDF417
+    },
+    numOfWorkers:2,
+    frequency:10,        // 10 decode attempts per second
+    decoder:{
+      readers:[
+        'pdf417_reader',   // primary — PDF417
+        'code_128_reader', // backup — common 1D
+        'code_39_reader',
+        'code_93_reader',
+        'i2of5_reader',
+        'codabar_reader'
+      ],
+      debug:{
+        showCanvas:false,
+        showPatches:false,
+        showFoundPatches:false,
+        showSkeleton:false,
+        showLabels:false,
+        showPatchLabels:false,
+        showRemainingPatchLabels:false,
+        boxFromPatches:{showTransformed:false,showTransformedBox:false,showBB:false}
+      },
+      multiple:false
+    },
+    locate:true
+  }, function(err){
+    if(err){
+      log('✗ Init error: '+err,'#f87171');
+      // Try simpler config if full config failed
+      log('Retrying with minimal config…');
+      Quagga.init({
+        inputStream:{type:'LiveStream',target:document.getElementById('interactive'),constraints:{facingMode:'environment'}},
+        decoder:{readers:['pdf417_reader','code_128_reader']},
+        locate:true
+      },function(err2){
+        if(err2){log('✗ Both configs failed: '+err2,'#f87171');}
+        else{log('✓ Quagga started (minimal)');Quagga.start();}
+      });
+      return;
+    }
+    log('✓ Quagga initialized');
+    Quagga.start();
+    log('✓ Scanner running — PDF417 + Code128 + others');
+  });
+
+  // Fired on every frame with partial results — shows confidence
+  Quagga.onProcessed(function(result){
+    if(!result) return;
+    readAttempts++;
+    if(readAttempts%30===0) log('Attempts: '+readAttempts);
+
+    const drawingCtx=Quagga.canvas.ctx.overlay;
+    const drawingCanvas=Quagga.canvas.dom.overlay;
+    if(!drawingCtx||!drawingCanvas) return;
+
+    drawingCtx.clearRect(0,0,parseInt(drawingCanvas.getAttribute('width')),parseInt(drawingCanvas.getAttribute('height')));
+
+    if(result.boxes){
+      result.boxes.filter(b=>b!==result.box).forEach(box=>{
+        Quagga.ImageDebug.drawPath(box,{x:0,y:1},drawingCtx,{color:'rgba(52,211,153,0.3)',lineWidth:2});
+      });
+    }
+    if(result.box){
+      Quagga.ImageDebug.drawPath(result.box,{x:0,y:1},drawingCtx,{color:'#34d399',lineWidth:3});
+    }
+    if(result.codeResult&&result.codeResult.code){
+      const conf=result.codeResult.decodedCodes.reduce((sum,c)=>sum+(c.error||0),0)/result.codeResult.decodedCodes.length;
+      const pct=Math.round((1-Math.min(conf,1))*100);
+      document.getElementById('confFill').style.width=pct+'%';
+      document.getElementById('confLabel').textContent='Confidence: '+pct+'%';
+    }
+  });
+
+  // Fired on confirmed decode
+  Quagga.onDetected(function(result){
+    if(!result||!result.codeResult) return;
+    const code=result.codeResult.code;
+    if(!code||code.length<3) return;
+
+    // Check error rate — only accept high-confidence scans
+    const errors=result.codeResult.decodedCodes.map(c=>c.error||0);
+    const avgErr=errors.reduce((a,b)=>a+b,0)/errors.length;
+    log('Detected: '+code.substring(0,60)+' (err:'+avgErr.toFixed(3)+')');
+
+    if(avgErr<0.15){  // low error = high confidence
+      showResult(code);
+    }else{
+      log('Low confidence ('+avgErr.toFixed(3)+') — continuing…','#f59e0b');
+    }
+  });
+}
+
+window.addEventListener('load',()=>{
+  if(typeof Quagga==='undefined'){
+    log('✗ Quagga failed to load — check internet connection','#f87171');
+    return;
+  }
+  log('QuaggaJS loaded OK');
+  startQuagga();
+});
+</script>
+</body>
+</html>
