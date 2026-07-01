@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src *; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'">
 <title>Matrex Panel Scan</title>
 <style>
 :root{
@@ -77,7 +78,15 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
 .c-flag .n{color:var(--red-600)}
 
 /* CAMERA */
-#cambox{position:relative;background:var(--gray-900);border-radius:var(--r);overflow:hidden;margin-bottom:10px;aspect-ratio:16/9;max-height:240px;box-shadow:var(--shadow-sm)}
+#cambox{position:relative;background:var(--gray-900);border-radius:var(--r);overflow:hidden;margin-bottom:10px;height:240px;transition:height .12s ease-out;box-shadow:var(--shadow-sm)}
+
+/* CAMERA SIZE SLIDER */
+.camsize-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:0 2px}
+.camsize-ico{color:var(--gray-500);flex-shrink:0}
+.camsize-ico.big{color:var(--gray-700)}
+.camsize-slider{flex:1;-webkit-appearance:none;appearance:none;height:4px;border-radius:2px;background:var(--gray-200);outline:none;margin:10px 0}
+.camsize-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:20px;height:20px;border-radius:50%;background:var(--blue-600);cursor:pointer;border:3px solid var(--white);box-shadow:var(--shadow-sm)}
+.camsize-slider::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:var(--blue-600);cursor:pointer;border:3px solid var(--white);box-shadow:var(--shadow-sm)}
 #cam{width:100%;height:100%;object-fit:cover;display:block}
 #aim{position:absolute;left:5%;right:5%;top:15%;bottom:15%;border:2px solid rgba(255,255,255,.85);border-radius:8px;pointer-events:none;box-shadow:0 0 0 9999px rgba(0,0,0,.42)}
 .aim-c{position:absolute;width:18px;height:18px;border-color:#2B59E1;border-style:solid}
@@ -93,6 +102,11 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 #torchBtn{position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.3);border-radius:6px;color:white;font-size:11px;padding:5px 9px;cursor:pointer;z-index:5;font-family:inherit}
+
+/* SCAN TOAST — half-second TAG confirmation over the camera */
+#scanToast{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;opacity:0;transition:opacity .12s ease;z-index:7;padding:16px}
+#scanToast.on{opacity:1}
+#scanToast .stx{background:rgba(16,24,40,.86);color:var(--white);font-size:22px;font-weight:800;letter-spacing:.3px;padding:14px 22px;border-radius:14px;text-align:center;max-width:100%;word-break:break-word;box-shadow:0 4px 18px rgba(0,0,0,.4)}
 
 /* CAMERA PICKER — only shown when more than one camera is found */
 #camPickWrap{display:none;margin-bottom:14px}
@@ -318,12 +332,19 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
       </div>
       <button id="torchBtn" type="button">Torch</button>
       <div id="scanLine"></div>
+      <div id="scanToast"><div class="stx" id="scanToastTxt"></div></div>
       <div id="camStatus">
         <svg class="spin" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" style="width:28px;height:28px">
           <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
         </svg>
         <span id="camMsg" style="font-size:13px;line-height:1.6;white-space:pre-line">Starting camera…</span>
       </div>
+    </div>
+
+    <div class="camsize-row" role="group" aria-label="Camera preview size">
+      <svg class="camsize-ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18-5h-3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m11-5v3a2 2 0 0 1-2 2h-3"/></svg>
+      <input type="range" id="camSizeSlider" class="camsize-slider" min="160" max="420" step="10" value="240" aria-label="Camera preview height">
+      <svg class="camsize-ico big" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18-5h-3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m11-5v3a2 2 0 0 1-2 2h-3"/></svg>
     </div>
 
     <div id="camPickWrap">
@@ -458,7 +479,7 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
 
 <div class="mbg" id="mScan"><div class="msheet"><div class="mhandle"></div><div class="m-icon-wrap info"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2B59E1" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></div><div class="m-title">Scan details</div><div class="m-desc">Review the mapped fields from this barcode scan.</div><div class="data-card" id="mScanData"></div><div class="mbtns"><button class="m-ok" id="mScanClose" type="button">Close</button></div></div></div>
 
-<script src="https://unpkg.com/@zxing/browser@latest"></script>
+<script src="https://unpkg.com/@zxing/browser@0.2.0/umd/zxing-browser.min.js" integrity="sha384-HRtzk9lZgkbSgvUyQrnfC/GxiXZgwaNyD7hC9wcXlsBpDhkS80ISl73juef2FRuf" crossorigin="anonymous"></script>
 <script>
 'use strict';
 /*
@@ -479,7 +500,7 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
 */
 
 const PASSWORD='M@trex', DELIM='*';
-const LS={scans:d=>'mx_scans_'+d,cfg:'mx_cfg',lastUp:'mx_lastup'};
+const LS={scans:d=>'mx_scans_'+d,cfg:'mx_cfg',lastUp:'mx_lastup',camSize:'mx_camsize'};
 
 const $=id=>document.getElementById(id);
 const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -506,7 +527,11 @@ const saveScans=()=>lsSet(LS.scans(today),scans);
 
 function buildCSV(){
   const h=['DATE','SCAN_TIME','BATCH_SHEET','PROJECT','FLOOR','PART_TYPE','PART_NAME','SIZE','QTY_REQUIRED','COLOUR','SKID','METHOD','FLAG','DEVICE'];
-  const q=v=>{v=String(v==null?'':v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+  const q=v=>{
+    v=String(v==null?'':v);
+    if(/^[=+\-@\t\r]/.test(v))v="'"+v; // neutralize CSV/formula injection when opened in Excel/Sheets
+    return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;
+  };
   return[h.join(','),...scans.map(s=>[s.date,s.time,s.batchSheet,s.project,s.floor,s.partType,s.partName,s.size,s.qty,s.colour,s.skid||'',s.method,s.flag||'',cfg.dev].map(q).join(','))].join('\r\n');
 }
 const csvName=()=>'Matrex_Scans_'+today+'.csv';
@@ -569,6 +594,18 @@ function setCamMsg(msg,isErr){
   const el=$('camStatus');el.classList.remove('gone');
   el.innerHTML=`<svg class="spin" viewBox="0 0 24 24" fill="none" stroke="${isErr?'#FDA29B':'white'}" stroke-width="2.5" stroke-linecap="round" style="width:28px;height:28px"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg><span style="color:${isErr?'#FCA5A5':'rgba(255,255,255,.85)'};font-size:13px;white-space:pre-line;text-align:center">${msg}</span>`;
 }
+
+// ── CAMERA SIZE — live slider, persisted per phone ─────────
+const CAMSIZE_MIN=160,CAMSIZE_MAX=420,CAMSIZE_DEFAULT=240;
+let camSize=Math.min(CAMSIZE_MAX,Math.max(CAMSIZE_MIN,parseInt(lsGet(LS.camSize),10)||CAMSIZE_DEFAULT));
+function applyCamSize(px){$('cambox').style.height=px+'px';}
+applyCamSize(camSize);
+$('camSizeSlider').value=camSize;
+$('camSizeSlider').addEventListener('input',e=>{
+  camSize=parseInt(e.target.value,10);
+  applyCamSize(camSize); // live update on every drag tick — CSS transition smooths the motion
+});
+$('camSizeSlider').addEventListener('change',()=>lsSet(LS.camSize,camSize));
 
 // ── TORCH ─────────────────────────────────────────────────
 async function toggleTorch(){
@@ -711,6 +748,17 @@ function stopScanner(){
 }
 
 // ── PARSE PAYLOAD ─────────────────────────────────────────
+// A genuine Matrex label always has exactly 8 '*'-delimited fields with
+// Part Name and Programme/Sheet Number populated. Anything else (a QR
+// code to a website, another vendor's carton barcode, a badge, a partial/
+// misread decode) is rejected here rather than silently becoming a scan
+// with garbage or missing fields.
+const EXPECTED_FIELDS=8, MAX_RAW_LEN=500;
+function isMatrexPayload(raw){
+  if(raw.length>MAX_RAW_LEN)return false;
+  const f=raw.split(DELIM);
+  return f.length===EXPECTED_FIELDS&&f[0].trim()!==''&&f[1].trim()!=='';
+}
 function parsePayload(raw){
   const f=raw.split(DELIM);
   return{
@@ -748,6 +796,9 @@ function dataHtml(p){
 // adding a duplicate.
 function handleRaw(raw,method){
   raw=String(raw).trim();if(!raw)return;
+  if(method==='SCAN'&&!isMatrexPayload(raw)){
+    beep('err');showFlash('bad','Not a Matrex part label — barcode ignored.');return;
+  }
   const part=method==='SCAN'?parsePayload(raw):raw;
   if(!part.partName){
     showFlash('bad','Barcode read but no Part Name found. Check delimiter (*) in data.');return;
@@ -776,7 +827,18 @@ function commit(part,flag,note){
   beep('ok');updateCounters();renderRecent();
   const base=part.partName+(part.colour?' — '+part.colour:'');
   showFlash(flag==='WRONG_PART'?'bad':'ok',note?base+' ('+note+')':base);
+  if(part.method==='SCAN')showScanToast(part.partName);
   if(!cfg.url)setSyncUI('','Saved on phone');
+}
+
+// ── SCAN TOAST — quick TAG confirmation over the camera view ───────
+let toastT=null;
+function showScanToast(tag){
+  const el=$('scanToast');
+  $('scanToastTxt').textContent=tag;
+  el.classList.add('on');
+  clearTimeout(toastT);
+  toastT=setTimeout(()=>el.classList.remove('on'),600);
 }
 
 // ── FLASH ─────────────────────────────────────────────────
@@ -845,10 +907,16 @@ function refreshSettings(){
 }
 $('bSettings').onclick=()=>{$('setUrl').value=cfg.url;$('setDev').value=cfg.dev;$('connRes').textContent='';refreshSettings();show('scrSettings');};
 $('bBackSettings').onclick=()=>show('scrScan');
-$('bSaveSet').onclick=()=>{cfg.url=$('setUrl').value.trim().replace(/\/+$/,'');cfg.dev=$('setDev').value.trim()||'MATREX-PHONE';lsSet(LS.cfg,cfg);show('scrScan');refreshSettings();showFlash('ok','Settings saved');};
+function validUrl(u){return /^https?:\/\/[^\s]+$/i.test(u);}
+$('bSaveSet').onclick=()=>{
+  const u=$('setUrl').value.trim().replace(/\/+$/,'');
+  if(u&&!validUrl(u)){showFlash('bad','Receiver URL must start with http:// or https://');return;}
+  cfg.url=u;cfg.dev=$('setDev').value.trim()||'MATREX-PHONE';lsSet(LS.cfg,cfg);show('scrScan');refreshSettings();showFlash('ok','Settings saved');
+};
 $('bTestConn').onclick=async()=>{
   const u=$('setUrl').value.trim().replace(/\/+$/,'');
   if(!u){$('connRes').style.color='var(--amber-700)';$('connRes').textContent='Enter a URL first';return;}
+  if(!validUrl(u)){$('connRes').style.color='var(--red-600)';$('connRes').textContent='URL must start with http:// or https://';return;}
   $('connRes').style.color='var(--gray-500)';$('connRes').textContent='Testing…';
   try{const r=await fetch(u+'/health');$('connRes').style.color=r.ok?'var(--green-700)':'var(--amber-700)';$('connRes').textContent=r.ok?'Connected':'HTTP '+r.status;}
   catch(e){$('connRes').style.color='var(--red-600)';$('connRes').textContent='Cannot reach server. Check URL and WiFi.';}
