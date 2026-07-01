@@ -456,6 +456,8 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
 
 <div class="mbg" id="mDel"><div class="msheet"><div class="mhandle"></div><div class="m-icon-wrap danger"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#D92D20" stroke-width="2.5" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg></div><div class="m-title">Remove This Scan?</div><div class="m-desc">This cannot be undone.</div><div class="data-card" id="mDelData"></div><div class="mbtns"><button class="m-confirm" id="mDelOk" type="button">Remove</button><button class="m-cancel" id="mDelCancel" type="button">Keep It</button></div></div></div>
 
+<div class="mbg" id="mScan"><div class="msheet"><div class="mhandle"></div><div class="m-icon-wrap info"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2B59E1" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></div><div class="m-title">Scan details</div><div class="m-desc">Review the mapped fields from this barcode scan.</div><div class="data-card" id="mScanData"></div><div class="mbtns"><button class="m-ok" id="mScanClose" type="button">Close</button></div></div></div>
+
 <script src="https://unpkg.com/@zxing/browser@latest"></script>
 <script>
 'use strict';
@@ -801,10 +803,12 @@ function renderRecent(){
     el.innerHTML='<div class="empty-box"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1" stroke-dasharray="3 2"/></svg><div class="et">No scans yet</div><div class="es">Point camera at PDF417 barcode.</div></div>';
     return;
   }
-  el.innerHTML=scans.slice(-6).reverse().map(s=>{
+  const recent=scans.slice(-6).reverse();
+  el.innerHTML=recent.map((s,j)=>{
+    const i=scans.length-1-j;
     const cls=s.flag==='DUPLICATE'?'is-dup':s.flag==='WRONG_PART'?'is-wrong':s.method==='MANUAL'?'is-manual':'';
     const sub=[s.batchSheet,s.project,s.floor,s.partType,s.size,s.qty].filter(Boolean).map(esc).join(' · ');
-    return`<div class="srow ${cls}"><div class="s-dot2"></div><div class="srow-info"><div class="srow-name">${esc(s.partName)}${s.colour?' <span style="color:var(--gray-500);font-weight:500">'+esc(s.colour)+'</span>':''}</div>${sub?`<div class="srow-sub">${sub}</div>`:''}</div><div class="srow-time">${fmtT(s.time)}</div></div>`;
+    return`<div class="srow ${cls}" onclick="openScanDetail(${i})"><div class="s-dot2"></div><div class="srow-info"><div class="srow-name">${esc(s.partName)}${s.colour?' <span style="color:var(--gray-500);font-weight:500">'+esc(s.colour)+'</span>':''}</div>${sub?`<div class="srow-sub">${sub}</div>`:''}</div><div class="srow-time">${fmtT(s.time)}</div></div>`;
   }).join('');
 }
 function renderFull(q){
@@ -822,7 +826,7 @@ function renderFull(q){
       const dc=s.flag==='DUPLICATE'?'dup':s.flag==='WRONG_PART'?'wrong':s.method==='MANUAL'?'manual':'';
       const fp=s.flag==='DUPLICATE'?'<span class="flag-pill fp-dup">DUP</span>':s.flag==='WRONG_PART'?'<span class="flag-pill fp-wrong">WRONG</span>':'';
       const sub=[s.batchSheet,s.project,s.floor,s.partType,s.size,s.qty,s.colour].filter(Boolean).map(esc).join(' · ');
-      html+=`<div class="fl-row"><div class="fl-num">${i+1}</div><div class="fl-dot ${dc}"></div><div class="fl-info"><div class="fl-name">${esc(s.partName)}${fp}</div>${sub?`<div class="fl-sub">${sub} · ${fmtT(s.time)} · ${s.method}</div>`:''}</div><div class="fl-acts"><button class="fl-btn sk" onclick="openSkidRow(${i})" aria-label="Skid" type="button"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></button><button class="fl-btn dl" onclick="openDel(${i})" aria-label="Remove" type="button"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></div></div>`;
+      html+=`<div class="fl-row" onclick="openScanDetail(${i})" style="cursor:pointer"><div class="fl-num">${i+1}</div><div class="fl-dot ${dc}"></div><div class="fl-info"><div class="fl-name">${esc(s.partName)}${fp}</div>${sub?`<div class="fl-sub">${sub} · ${fmtT(s.time)} · ${s.method}</div>`:''}</div><div class="fl-acts"><button class="fl-btn sk" onclick="event.stopPropagation();openSkidRow(${i})" aria-label="Skid" type="button"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></button><button class="fl-btn dl" onclick="event.stopPropagation();openDel(${i})" aria-label="Remove" type="button"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></div></div>`;
     });
   });
   el.innerHTML=html;
@@ -862,6 +866,9 @@ $('skidCancel').onclick=()=>modal('mSkid',false);
 window.openDel=i=>{delTarget=i;$('mDelData').innerHTML=dataHtml(scans[i]);modal('mDel',true);};
 $('mDelOk').onclick=()=>{if(delTarget!==null){const n=scans[delTarget].partName;scans.splice(delTarget,1);saveScans();updateCounters();renderRecent();renderFull($('searchInp').value);delTarget=null;showFlash('bad',n+' removed');}modal('mDel',false);};
 $('mDelCancel').onclick=()=>modal('mDel',false);
+
+window.openScanDetail=i=>{if(typeof scans[i]==='undefined')return;$('mScanData').innerHTML=dataHtml(scans[i]);modal('mScan',true);};
+$('mScanClose').onclick=()=>modal('mScan',false);
 
 // ── DUPLICATE ────────────────────────────────────────────
 $('mDupAdd').onclick=()=>{modal('mDup',false);if(pendingDup){pendingDup.flag='DUPLICATE';commit(pendingDup);pendingDup=null;}};
