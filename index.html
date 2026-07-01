@@ -712,10 +712,14 @@ function stopScanner(){
 function parsePayload(raw){
   const f=raw.split(DELIM);
   return{
-    batchSheet:(f[0]||'').trim(),project:(f[1]||'').trim(),
-    floor:(f[2]||'').trim(),partType:(f[3]||'').trim(),
-    partName:(f[4]||'').trim(),size:(f[5]||'').trim(),
-    qty:(f[6]||'').trim(),colour:(f[7]||'').trim(),
+    partName:(f[0]||'').trim(),
+    batchSheet:(f[1]||'').trim(),
+    project:(f[2]||'').trim(),
+    partType:(f[3]||'').trim(),
+    floor:(f[4]||'').trim(),
+    size:(f[5]||'').trim(),
+    qty:(f[6]||'').trim(),
+    colour:(f[7]||'').trim(),
     raw,date:today,time:new Date().toISOString(),method:'SCAN',flag:'',skid:currentSkid||''
   };
 }
