@@ -778,6 +778,14 @@ function parsePayload(raw){
     raw,date:today,time:new Date().toISOString(),method:'SCAN',flag:'',skid:currentSkid||''
   };
 }
+// Duplicate detection compares every identifying field, not just Tag +
+// Programme/Sheet Number — two scans only count as the same part if the
+// whole record matches (Colour included), so a real difference in any
+// field is never mistaken for a duplicate.
+function scanKey(p){
+  return[p.partName,p.batchSheet,p.project,p.floor,p.partType,p.size,p.qty,p.colour]
+    .map(v=>String(v||'').trim().toUpperCase()).join('|');
+}
 // dataHtml shows every field from a scan, in the same order and with
 // the same titles as the verified barcode spec (Programme/Sheet Number
 // * Project * Floor * Type * Tag * Dimension * Qty * Colour) - this is
@@ -808,8 +816,8 @@ function handleRaw(raw,method){
   if(!part.partName){
     showFlash('bad','Barcode read but no Part Name found. Check delimiter (*) in data.');return;
   }
-  const key=(part.partName+'|'+part.batchSheet).toUpperCase();
-  if(scans.some(s=>(s.partName+'|'+s.batchSheet).toUpperCase()===key&&s.flag!=='DUPLICATE')){
+  const key=scanKey(part);
+  if(scans.some(s=>scanKey(s)===key&&s.flag!=='DUPLICATE')){
     beep('err');pendingDup=part;$('mDupData').innerHTML=dataHtml(part);modal('mDup',true);return;
   }
   if(scans.length>=3&&method==='SCAN'){
@@ -955,8 +963,8 @@ $('manOk').onclick=()=>{
   if(!name){$('manName').focus();alert('Part Name is required.');return;}
   modal('mManual',false);
   const part={batchSheet:'',project:$('manProj').value.trim().toUpperCase(),floor:$('manFloor').value.trim().toUpperCase(),partType:$('manType').value.trim().toUpperCase(),partName:name,size:$('manSize').value.trim().toUpperCase(),qty:$('manQty').value.trim(),colour:$('manCol').value.trim().toUpperCase(),raw:'',date:today,time:new Date().toISOString(),method:'MANUAL',flag:'',skid:currentSkid||''};
-  const key=(part.partName+'|').toUpperCase();
-  if(scans.some(s=>(s.partName+'|'+s.batchSheet).toUpperCase()===key&&s.flag!=='DUPLICATE')){pendingDup=part;$('mDupData').innerHTML=dataHtml(part);modal('mDup',true);return;}
+  const key=scanKey(part);
+  if(scans.some(s=>scanKey(s)===key&&s.flag!=='DUPLICATE')){pendingDup=part;$('mDupData').innerHTML=dataHtml(part);modal('mDup',true);return;}
   commit(part);
 };
 $('manCancel').onclick=()=>modal('mManual',false);
