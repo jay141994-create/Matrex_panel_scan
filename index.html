@@ -343,7 +343,7 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
 
     <div class="camsize-row" role="group" aria-label="Camera preview size">
       <svg class="camsize-ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18-5h-3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m11-5v3a2 2 0 0 1-2 2h-3"/></svg>
-      <input type="range" id="camSizeSlider" class="camsize-slider" min="160" max="420" step="10" value="240" aria-label="Camera preview height">
+      <input type="range" id="camSizeSlider" class="camsize-slider" min="90" max="420" step="10" value="240" aria-label="Camera preview height">
       <svg class="camsize-ico big" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18-5h-3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m11-5v3a2 2 0 0 1-2 2h-3"/></svg>
     </div>
 
@@ -596,7 +596,7 @@ function setCamMsg(msg,isErr){
 }
 
 // ── CAMERA SIZE — live slider, persisted per phone ─────────
-const CAMSIZE_MIN=160,CAMSIZE_MAX=420,CAMSIZE_DEFAULT=240;
+const CAMSIZE_MIN=90,CAMSIZE_MAX=420,CAMSIZE_DEFAULT=240;
 let camSize=Math.min(CAMSIZE_MAX,Math.max(CAMSIZE_MIN,parseInt(lsGet(LS.camSize),10)||CAMSIZE_DEFAULT));
 function applyCamSize(px){$('cambox').style.height=px+'px';}
 applyCamSize(camSize);
@@ -748,16 +748,21 @@ function stopScanner(){
 }
 
 // ── PARSE PAYLOAD ─────────────────────────────────────────
-// A genuine Matrex label always has exactly 8 '*'-delimited fields with
-// Part Name and Programme/Sheet Number populated. Anything else (a QR
-// code to a website, another vendor's carton barcode, a badge, a partial/
-// misread decode) is rejected here rather than silently becoming a scan
-// with garbage or missing fields.
-const EXPECTED_FIELDS=8, MAX_RAW_LEN=500;
+// A genuine Matrex label carries Programme/Sheet Number, Project, Floor,
+// Type, Tag, Dimension and Qty (7 required '*'-delimited fields, in the
+// same field positions parsePayload reads below) — Colour is optional
+// and may be blank or omitted entirely, so the field count can be 7 or 8.
+// Anything short of the 7 required fields (a QR code to a website,
+// another vendor's carton barcode, a badge, a partial/misread decode) is
+// rejected here rather than silently becoming a scan with garbage or
+// missing fields.
+const REQUIRED_FIELDS=7, MAX_FIELDS=8, MAX_RAW_LEN=500;
 function isMatrexPayload(raw){
   if(raw.length>MAX_RAW_LEN)return false;
   const f=raw.split(DELIM);
-  return f.length===EXPECTED_FIELDS&&f[0].trim()!==''&&f[1].trim()!=='';
+  if(f.length<REQUIRED_FIELDS||f.length>MAX_FIELDS)return false;
+  for(let i=0;i<REQUIRED_FIELDS;i++){if(!(f[i]||'').trim())return false;}
+  return true;
 }
 function parsePayload(raw){
   const f=raw.split(DELIM);
