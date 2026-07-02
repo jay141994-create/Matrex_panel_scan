@@ -485,8 +485,10 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
 /*
   MATREX PANEL SCAN — production build
   ─────────────────────────────────────────────────────────────────
-  Scanning engine: @zxing/browser, using the OFFICIAL decodeFromVideoDevice
-  pattern (confirmed working in Scan Test 5). ZXing owns getUserMedia and
+  Scanning engine: @zxing/browser, using decodeFromConstraints (the same
+  underlying getUserMedia + own-scan-loop pattern as decodeFromVideoDevice,
+  confirmed working in Scan Test 5, but lets us also cap the video
+  resolution for faster per-frame decodes). ZXing owns getUserMedia and
   the <video> element internally and runs its own scan loop directly
   against the live element — this replaced an earlier custom canvas-polling
   approach that was unreliable on Android. Camera permission is warmed up
@@ -661,7 +663,16 @@ async function startScanner(){
     hints.set(DecodeHintType.TRY_HARDER,true);
   }
 
-  codeReader=new ZX.BrowserMultiFormatReader(hints,100);
+  // The 2nd constructor arg is an options object (not a delay number —
+  // passing a bare number here, as an earlier version of this file did,
+  // is silently ignored and the library falls back to its default
+  // 500ms gap between every scan attempt, success or fail). Zeroing
+  // delayBetweenScanAttempts lets it retry as fast as each frame decodes
+  // instead of idling 500ms between tries — same decode algorithm/hints,
+  // just called far more often, so this is pure speed with no accuracy
+  // tradeoff. delayBetweenScanSuccess stays short too since our own
+  // DEBOUNCE_MS below already guards against re-committing the same code.
+  codeReader=new ZX.BrowserMultiFormatReader(hints,{delayBetweenScanAttempts:0,delayBetweenScanSuccess:150});
 
   // Camera permission must be granted once before device labels are
   // populated — otherwise back-camera auto-detection silently fails and
@@ -715,7 +726,15 @@ async function runWithDevice(deviceId){
   setEngine('Starting…','');
   const previewElem=$('cam');
   try{
-    controls=await codeReader.decodeFromVideoDevice(deviceId,previewElem,(result,error)=>{
+    // Capping resolution to 720p (an "ideal", not "exact", constraint —
+    // browsers that can't hit it just get as close as they can) means
+    // every decode attempt scans far fewer pixels. 720p is plenty of
+    // detail for a PDF417 held 15-25cm away, so this trades no accuracy
+    // for a meaningfully faster per-attempt decode.
+    const videoConstraints=deviceId
+      ?{deviceId:{exact:deviceId},width:{ideal:1280},height:{ideal:720}}
+      :{facingMode:'environment',width:{ideal:1280},height:{ideal:720}};
+    controls=await codeReader.decodeFromConstraints({video:videoConstraints},previewElem,(result,error)=>{
       if(result){
         const now=Date.now();
         const raw=result.getText();
