@@ -768,7 +768,7 @@ function stopScanner(){
 
 // ── PARSE PAYLOAD ─────────────────────────────────────────
 // A genuine Matrex label carries Programme/Sheet Number, Project, Floor,
-// Tag, Type, Dimension and Qty (7 required '*'-delimited fields, in the
+// Type, Tag, Dimension and Qty (7 required '*'-delimited fields, in the
 // same field positions parsePayload reads below) — Colour is optional
 // and may be blank or omitted entirely, so the field count can be 7 or 8.
 // Anything short of the 7 required fields (a QR code to a website,
@@ -789,8 +789,8 @@ function parsePayload(raw){
     batchSheet:(f[0]||'').trim(),
     project:(f[1]||'').trim(),
     floor:(f[2]||'').trim(),
-    partName:(f[3]||'').trim(),
-    partType:(f[4]||'').trim(),
+    partType:(f[3]||'').trim(),
+    partName:(f[4]||'').trim(),
     size:(f[5]||'').trim(),
     qty:(f[6]||'').trim(),
     colour:(f[7]||'').trim(),
@@ -807,11 +807,11 @@ function scanKey(p){
 }
 // dataHtml shows every field from a scan, in the same order and with
 // the same titles as the verified barcode spec (Programme/Sheet Number
-// * Project * Floor * Tag * Type * Dimension * Qty * Colour) - this is
+// * Project * Floor * Type * Tag * Dimension * Qty * Colour) - this is
 // the full set, not a trimmed subset, so nothing scanned is hidden here.
 function dataHtml(p){
   return[['Programme / Sheet Number',p.batchSheet],['Project',p.project],['Floor',p.floor],
-         ['Tag',p.partName],['Type',p.partType],['Dimension',p.size],
+         ['Type',p.partType],['Tag',p.partName],['Dimension',p.size],
          ['Qty',p.qty],['Colour',p.colour]]
     .filter(([,v])=>v).map(([k,v])=>`<div class="data-row"><span class="data-k">${esc(k)}</span><span class="data-v">${esc(v)}</span></div>`).join('');
 }
