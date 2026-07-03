@@ -444,6 +444,8 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
         <p>Leave blank to work phone-only. Add the server URL when IT is ready. The CSV uploads automatically once a day (midnight), or any time with the Upload button.</p>
         <div class="fg"><label class="fg-label" for="setUrl">Receiver URL</label><input class="fg-input" id="setUrl" inputmode="url" autocapitalize="off" placeholder="http://192.168.1.50:8765"></div>
         <div class="fg"><label class="fg-label" for="setDev">Device name</label><input class="fg-input" id="setDev" autocapitalize="characters" placeholder="e.g. PHONE-DARPIT"></div>
+        <div class="fg"><label class="fg-label" for="setFilePrefix">CSV file name</label><input class="fg-input" id="setFilePrefix" autocapitalize="characters" placeholder="e.g. Matrex_Scans"></div>
+        <div class="f-hint" style="margin-bottom:14px">Saved as &lt;name&gt;_YYYY-MM-DD.csv — the date is always added automatically.</div>
         <button class="btn btn-solid" id="bSaveSet" type="button" style="font-size:15px;padding:14px">Save Settings</button>
         <button class="btn btn-outline mt10" id="bTestConn" type="button">Test Connection</button>
         <div id="connRes" style="font-size:13px;text-align:center;margin-top:10px;font-weight:600"></div>
@@ -526,7 +528,7 @@ function todayStr(){const d=new Date();return d.getFullYear()+'-'+String(d.getMo
 const fmtT=iso=>iso?new Date(iso).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'—';
 const fmtDT=iso=>iso?new Date(iso).toLocaleDateString([],{month:'short',day:'numeric'})+' '+fmtT(iso):'Never';
 
-let cfg=lsGet(LS.cfg)||{url:'',dev:'MATREX-PHONE'};
+let cfg=lsGet(LS.cfg)||{url:'',dev:'MATREX-PHONE',filePrefix:'Matrex_Scans'};
 let scans=[],currentSkid=null,today=todayStr();
 let skidTarget=null,delTarget=null,pendingDup=null;
 let nextMidnightUpload=null,engineLabel='Starting…';
@@ -547,7 +549,7 @@ function buildCSV(){
   };
   return[h.join(','),...scans.map(s=>[s.date,s.time,s.batchSheet,s.project,s.floor,s.partType,s.partName,s.size,s.qty,s.colour,s.skid||'',s.method,s.flag||'',cfg.dev].map(q).join(','))].join('\r\n');
 }
-const csvName=()=>'Matrex_Scans_'+today+'.csv';
+const csvName=()=>(cfg.filePrefix||'Matrex_Scans')+'_'+today+'.csv';
 function downloadCSV(){const b=new Blob([buildCSV()],{type:'text/csv;charset=utf-8;'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=csvName();a.click();URL.revokeObjectURL(u);}
 
 // ── UPLOAD — once a day at midnight, plus manual Upload button ─────
@@ -951,13 +953,14 @@ function refreshSettings(){
   if(cfg.url){srv.className='chip chip-on';srv.innerHTML='<span></span>Configured';}
   else{srv.className='chip chip-off';srv.innerHTML='<span></span>Not configured';}
 }
-$('bSettings').onclick=()=>{$('setUrl').value=cfg.url;$('setDev').value=cfg.dev;$('connRes').textContent='';refreshSettings();show('scrSettings');};
+$('bSettings').onclick=()=>{$('setUrl').value=cfg.url;$('setDev').value=cfg.dev;$('setFilePrefix').value=cfg.filePrefix||'Matrex_Scans';$('connRes').textContent='';refreshSettings();show('scrSettings');};
 $('bBackSettings').onclick=()=>show('scrScan');
 function validUrl(u){return /^https?:\/\/[^\s]+$/i.test(u);}
 $('bSaveSet').onclick=()=>{
   const u=$('setUrl').value.trim().replace(/\/+$/,'');
   if(u&&!validUrl(u)){showFlash('bad','Receiver URL must start with http:// or https://');return;}
-  cfg.url=u;cfg.dev=$('setDev').value.trim()||'MATREX-PHONE';lsSet(LS.cfg,cfg);show('scrScan');refreshSettings();showFlash('ok','Settings saved');
+  const prefix=$('setFilePrefix').value.trim().replace(/[\\/:*?"<>|]/g,'').replace(/\s+/g,'_');
+  cfg.url=u;cfg.dev=$('setDev').value.trim()||'MATREX-PHONE';cfg.filePrefix=prefix||'Matrex_Scans';lsSet(LS.cfg,cfg);show('scrScan');refreshSettings();showFlash('ok','Settings saved');
 };
 $('bTestConn').onclick=async()=>{
   const u=$('setUrl').value.trim().replace(/\/+$/,'');
