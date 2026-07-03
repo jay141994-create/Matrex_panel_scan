@@ -579,14 +579,9 @@ function scheduleMidnightUpload(){
   nextMidnightUpload=new Date(Date.now()+msUntilNextMidnight());
   setTimeout(async()=>{
     if(cfg.url&&scans.length)await uploadToServer('midnight-daily');
-    rolloverDay();
-    scheduleMidnightUpload();
+    location.reload();
   },msUntilNextMidnight());
   updateSyncNext();
-}
-function rolloverDay(){
-  today=todayStr();scans=[];currentSkid=null;loadScans();renderAll();
-  setSyncUI('','New day: '+today);refreshSettings();
 }
 function updateSyncNext(){
   if(!cfg.url||!nextMidnightUpload){$('syncNext').textContent='';return;}
