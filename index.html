@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src *; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'">
+<meta name="theme-color" content="#0071E3">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
 <title>Matrex Panel Scan</title>
 <style>
 :root{
@@ -443,6 +447,7 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
       <div class="s-card-body">
         <p>Leave blank to work phone-only. Add the server URL when IT is ready. The CSV uploads automatically once a day (midnight), or any time with the Upload button.</p>
         <div class="fg"><label class="fg-label" for="setUrl">Receiver URL</label><input class="fg-input" id="setUrl" inputmode="url" autocapitalize="off" placeholder="http://192.168.1.50:8765"></div>
+        <div class="f-hint" id="urlMixedWarn" style="display:none;color:var(--amber-700);margin-bottom:14px">⚠ This app loads over HTTPS, so browsers block plain <code>http://</code> requests to your receiver (even on your local WiFi). Ask IT for an <code>https://</code> receiver URL, or scans will only save to the phone.</div>
         <div class="fg"><label class="fg-label" for="setDev">Device name</label><input class="fg-input" id="setDev" autocapitalize="characters" placeholder="e.g. PHONE-DARPIT"></div>
         <div class="fg"><label class="fg-label" for="setFilePrefix">CSV file name</label><input class="fg-input" id="setFilePrefix" autocapitalize="characters" placeholder="e.g. Matrex_Scans"></div>
         <div class="f-hint" style="margin-bottom:14px">Saved as &lt;name&gt;_YYYY-MM-DD.csv — the date is always added automatically.</div>
@@ -517,7 +522,8 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
 */
 
 const PASSWORD='M@trex', DELIM='*';
-const LS={scans:d=>'mx_scans_'+d,cfg:'mx_cfg',lastUp:'mx_lastup',camSize:'mx_camsize'};
+const LS={scans:d=>'mx_scans_'+d,cfg:'mx_cfg',lastUp:'mx_lastup',camSize:'mx_camsize',login:'mx_login'};
+const LOGIN_TTL_MS=30*24*60*60*1000; // stay signed in for 30 days on this phone
 
 const $=id=>document.getElementById(id);
 const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -554,8 +560,14 @@ function buildCSV(){
 const csvName=()=>(cfg.filePrefix||'Matrex_Scans')+'_'+today+'.csv';
 function downloadCSV(){const b=new Blob([buildCSV()],{type:'text/csv;charset=utf-8;'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=csvName();a.click();URL.revokeObjectURL(u);}
 
-// ── UPLOAD — once a day at midnight, plus manual Upload button ─────
+// ── UPLOAD — on every scan (debounced), once a day at midnight, plus
+// manual Upload button. A failed upload no longer just waits for the next
+// scan or midnight — it retries on its own with backoff (30s → 5min cap)
+// until it succeeds, since a phone can sit idle after the last scan of
+// the day with a failed upload otherwise stuck until midnight.
 let uploading=false;
+let retryTimer=null,retryDelay=30000;
+const RETRY_MAX_MS=300000;
 async function uploadToServer(reason){
   if(!cfg.url||!scans.length||uploading)return false;
   uploading=true;setSyncUI('syncing','Uploading…');
@@ -563,8 +575,18 @@ async function uploadToServer(reason){
     const r=await fetch(cfg.url+'/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:csvName(),csv:buildCSV(),device:cfg.dev,date:today,count:scans.length,reason})});
     if(!r.ok)throw new Error('HTTP '+r.status);
     const ts=new Date().toISOString();lsSet(LS.lastUp,ts);
+    clearTimeout(retryTimer);retryDelay=30000;
     setSyncUI('ok','Uploaded '+fmtT(ts));refreshSettings();uploading=false;return true;
-  }catch(e){setSyncUI('fail','Upload failed — '+e.message);uploading=false;return false;}
+  }catch(e){
+    const mixed=isMixedContent(cfg.url);
+    setSyncUI('fail',mixed?'Upload blocked — receiver must be https://':'Upload failed — '+e.message);
+    uploading=false;scheduleRetry();return false;
+  }
+}
+function scheduleRetry(){
+  clearTimeout(retryTimer);
+  retryTimer=setTimeout(()=>{if(cfg.url&&scans.length)uploadToServer('retry');},retryDelay);
+  retryDelay=Math.min(retryDelay*2,RETRY_MAX_MS);
 }
 let autoUploadTimer=null;
 function scheduleAutoUpload(){
@@ -573,6 +595,20 @@ function scheduleAutoUpload(){
   if(!navigator.onLine){setSyncUI('','Saved on phone — will sync when online');return;}
   setSyncUI('syncing','Syncing…');
   autoUploadTimer=setTimeout(()=>{uploadToServer('auto');},1200);
+}
+// ── MIXED CONTENT — an https:// page (GitHub Pages) cannot fetch() a
+// plain http:// receiver, even on the local LAN; browsers block it as
+// mixed active content. Warn early instead of leaving people to puzzle
+// over a generic "upload failed" / "cannot reach server" message.
+function isMixedContent(u){
+  if(location.protocol!=='https:')return false;
+  try{
+    const p=new URL(u);
+    return p.protocol==='http:'&&p.hostname!=='localhost'&&p.hostname!=='127.0.0.1';
+  }catch(e){return false;}
+}
+function checkMixedWarn(){
+  $('urlMixedWarn').style.display=isMixedContent($('setUrl').value.trim())?'block':'none';
 }
 function msUntilNextMidnight(){
   const n=new Date();
@@ -957,8 +993,9 @@ function refreshSettings(){
 }
 const SETTINGS_PASSWORD='3090L4K572';
 function openSettingsScreen(){
-  $('setUrl').value=cfg.url;$('setDev').value=cfg.dev;$('setFilePrefix').value=cfg.filePrefix||'Matrex_Scans';$('connRes').textContent='';refreshSettings();show('scrSettings');
+  $('setUrl').value=cfg.url;$('setDev').value=cfg.dev;$('setFilePrefix').value=cfg.filePrefix||'Matrex_Scans';$('connRes').textContent='';refreshSettings();checkMixedWarn();show('scrSettings');
 }
+$('setUrl').addEventListener('input',checkMixedWarn);
 function trySettingsAuth(){
   const v=$('setAuthPw').value.trim();
   if(v===SETTINGS_PASSWORD){
@@ -987,7 +1024,10 @@ $('bTestConn').onclick=async()=>{
   if(!validUrl(u)){$('connRes').style.color='var(--red-600)';$('connRes').textContent='URL must start with http:// or https://';return;}
   $('connRes').style.color='var(--gray-500)';$('connRes').textContent='Testing…';
   try{const r=await fetch(u+'/health');$('connRes').style.color=r.ok?'var(--green-700)':'var(--amber-700)';$('connRes').textContent=r.ok?'Connected':'HTTP '+r.status;}
-  catch(e){$('connRes').style.color='var(--red-600)';$('connRes').textContent='Cannot reach server. Check URL and WiFi.';}
+  catch(e){
+    $('connRes').style.color='var(--red-600)';
+    $('connRes').textContent=isMixedContent(u)?'Blocked — this app is https, receiver must be too.':'Cannot reach server. Check URL and WiFi.';
+  }
 };
 $('bClear').onclick=()=>{if(!confirm('Clear all of today\'s scans?\n\nDownload or upload the CSV first.'))return;scans=[];currentSkid=null;saveScans();updateCounters();renderRecent();show('scrScan');showFlash('bad','Scans cleared');};
 $('bUpload').onclick=async()=>{if(!cfg.url){showFlash('bad','No server URL — open Settings.');return;}if(!scans.length){showFlash('bad','Nothing scanned yet.');return;}const ok=await uploadToServer('manual');if(ok)showFlash('ok',csvName()+' uploaded');};
@@ -1041,7 +1081,7 @@ function tryUnlock(){
     .replace(/[\u00A0\uFEFF\u200B]/g,'')
     .replace(/＠/g,'@');
   if(v===PASSWORD){
-    sessionStorage.setItem('mx_ok','1');$('pwErr').classList.remove('on');$('pwInput').classList.remove('err');
+    lsSet(LS.login,{exp:Date.now()+LOGIN_TTL_MS});$('pwErr').classList.remove('on');$('pwInput').classList.remove('err');
     show('scrScan');startScanner();
   }else{
     $('pwInput').classList.add('err');
@@ -1050,9 +1090,12 @@ function tryUnlock(){
     setTimeout(()=>{$('pwInput').classList.remove('err');$('pwErr').classList.remove('on');},3000);
   }
 }
-function checkAuth(){sessionStorage.getItem('mx_ok')==='1'?(show('scrScan'),startScanner()):show('scrLock');}
+function checkAuth(){
+  const l=lsGet(LS.login);
+  (l&&l.exp>Date.now())?(show('scrScan'),startScanner()):show('scrLock');
+}
 $('bLock').onclick=()=>{
-  sessionStorage.removeItem('mx_ok');stopScanner();show('scrLock');
+  localStorage.removeItem(LS.login);stopScanner();show('scrLock');
   $('pwInput').value='';$('pwInput').type='password';
   $('camStatus').classList.remove('gone');setCamMsg('Starting camera…');
 };
@@ -1070,6 +1113,7 @@ function beep(k){
 
 // ── BOOT ───────────────────────────────────────────────────
 loadScans();renderAll();scheduleMidnightUpload();checkAuth();
+if('serviceWorker' in navigator && isSecure())navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
 </body>
 </html>
