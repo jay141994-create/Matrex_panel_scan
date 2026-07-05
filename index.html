@@ -1063,6 +1063,7 @@ function refreshSettings(){
 }
 const SETTINGS_PASSWORD='3090L4K572';
 function openSettingsScreen(){
+  stopScanner(); // camera has no business running while the user isn't on the scan screen
   $('setUrl').value=cfg.url;$('setDev').value=cfg.dev;$('setFilePrefix').value=cfg.filePrefix||'Matrex_Scans';$('connRes').textContent='';refreshSettings();checkMixedWarn();show('scrSettings');
 }
 $('setUrl').addEventListener('input',checkMixedWarn);
@@ -1080,7 +1081,7 @@ $('setAuthEye').onclick=()=>{const i=$('setAuthPw');i.type=i.type==='password'?'
 $('setAuthOk').onclick=trySettingsAuth;
 $('setAuthPw').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();trySettingsAuth();}});
 $('setAuthCancel').onclick=()=>modal('mSettingsAuth',false);
-$('bBackSettings').onclick=()=>show('scrScan');
+$('bBackSettings').onclick=()=>{show('scrScan');startScanner();};
 function validUrl(u){return /^https?:\/\/[^\s]+$/i.test(u);}
 $('bSaveSet').onclick=()=>{
   const u=$('setUrl').value.trim().replace(/\/+$/,'');
@@ -1150,10 +1151,13 @@ $('manCancel').onclick=()=>modal('mManual',false);
 $('bDone').onclick=()=>{if(!scans.length){showFlash('bad','Nothing scanned yet.');return;}downloadCSV();showFlash('ok','CSV saved to Downloads');};
 
 // ── NAV ────────────────────────────────────────────────────
-function openListScreen(){viewDate=today;populateDatePicker();$('searchInp').value='';renderFull();show('scrList');}
+function openListScreen(){
+  stopScanner(); // camera has no business running while the user isn't on the scan screen
+  viewDate=today;populateDatePicker();$('searchInp').value='';renderFull();show('scrList');
+}
 $('bList').onclick=openListScreen;
 $('bExpandList').onclick=openListScreen;
-$('bBackList').onclick=()=>show('scrScan');
+$('bBackList').onclick=()=>{show('scrScan');startScanner();};
 
 // ── LOGIN ──────────────────────────────────────────────────
 $('pwEye').onclick=()=>{const i=$('pwInput');i.type=i.type==='password'?'text':'password';};
