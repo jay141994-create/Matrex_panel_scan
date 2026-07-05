@@ -199,6 +199,7 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
 .fg-input{width:100%;background:var(--gray-100);border:1.5px solid transparent;color:var(--gray-900);font-size:15px;padding:13px 16px;border-radius:var(--pill);font-family:inherit;outline:none;transition:all .2s var(--ease)}
 .fg-input::placeholder{color:var(--gray-300)}
 .fg-input:focus{background:var(--white);border-color:var(--blue-600);box-shadow:0 0 0 4px var(--blue-50)}
+.fg-input.err{border-color:var(--red-600);background:var(--red-50)}
 .copy-btn{width:100%;background:var(--gray-100);border:none;border-radius:var(--pill);color:var(--gray-700);font-size:13px;font-weight:600;padding:11px 14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:14px;font-family:inherit;transition:all .15s var(--ease)}
 .copy-btn:active{background:var(--gray-200);transform:scale(.98)}
 
@@ -426,6 +427,10 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
     <div style="width:70px"></div>
   </div>
   <div class="search-wrap">
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <select id="listDatePick" class="fg-input" style="flex:1;padding:10px 14px;font-size:13px;font-weight:600"></select>
+      <button class="s-btn" id="bListDownload" type="button" style="flex-shrink:0">CSV</button>
+    </div>
     <input class="search-inp" id="searchInp" placeholder="Search part name or project…" autocapitalize="characters">
   </div>
   <div id="fullList"></div>
@@ -466,6 +471,7 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
     <div class="s-card">
       <div class="s-row"><span class="s-k">File</span><span class="s-v" id="setFile">—</span></div>
       <div class="s-row"><span class="s-k">Scanned</span><span class="s-v" id="setCnt">0</span></div>
+      <div class="s-row"><span class="s-k">Pending upload</span><span class="s-v" id="setPending">0</span></div>
       <div class="s-row"><span class="s-k">Scanner engine</span><span class="s-v" id="setEng">—</span></div>
       <div class="s-row"><span class="s-k">Server</span><span id="setSrv" class="chip chip-off"><span></span>Not configured</span></div>
     </div>
@@ -487,11 +493,13 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
 <!-- MODALS -->
 <div class="mbg" id="mDup"><div class="msheet"><div class="mhandle"></div><div class="m-icon-wrap danger"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FF3B30" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><circle cx="12" cy="16" r="1" fill="#FF3B30" stroke="none"/></svg></div><div class="m-title">Already Scanned</div><div class="m-desc">This part was already recorded today. Add again as a duplicate, or skip?</div><div class="data-card" id="mDupData"></div><div class="mbtns"><button class="m-confirm" id="mDupAdd" type="button">Add as Duplicate</button><button class="m-cancel" id="mDupSkip" type="button">Skip — Don't Add</button></div></div></div>
 
-<div class="mbg" id="mManual"><div class="msheet"><div class="mhandle"></div><div class="m-icon-wrap info"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0071E3" stroke-width="2.5" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></div><div class="m-title">Manual Entry</div><div class="m-desc">Barcode unreadable. Only Part Name is required.</div><button class="copy-btn" id="manCopy" type="button"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy fields from last scanned part</button><div class="fg"><label class="fg-label" for="manName">Part Name<span class="fg-req">*</span></label><input class="fg-input" id="manName" autocapitalize="characters" placeholder="e.g. 177S-COL-3-MP1-R1"></div><div class="fg"><label class="fg-label" for="manProj">Project</label><input class="fg-input" id="manProj" autocapitalize="characters" placeholder="e.g. 177S"></div><div class="fg"><label class="fg-label" for="manFloor">Floor / WO</label><input class="fg-input" id="manFloor" autocapitalize="characters" placeholder="e.g. F18"></div><div class="fg"><label class="fg-label" for="manType">Part Type</label><input class="fg-input" id="manType" autocapitalize="characters" placeholder="e.g. SC"></div><div class="fg"><label class="fg-label" for="manSize">Size</label><input class="fg-input" id="manSize" autocapitalize="characters" placeholder="e.g. 5001 X 6001"></div><div class="fg"><label class="fg-label" for="manQty">Qty Required</label><input class="fg-input" id="manQty" placeholder="e.g. Q-1"></div><div class="fg"><label class="fg-label" for="manCol">Colour</label><input class="fg-input" id="manCol" autocapitalize="characters" placeholder="e.g. AT"></div><div class="mbtns" style="margin-top:14px"><button class="m-ok" id="manOk" type="button">Add Part</button><button class="m-cancel" id="manCancel" type="button">Cancel</button></div></div></div>
+<div class="mbg" id="mManual"><div class="msheet"><div class="mhandle"></div><div class="m-icon-wrap info"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0071E3" stroke-width="2.5" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></div><div class="m-title">Manual Entry</div><div class="m-desc">Barcode unreadable. Only Part Name is required.</div><button class="copy-btn" id="manCopy" type="button"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy fields from last scanned part</button><div class="fg"><label class="fg-label" for="manName">Part Name<span class="fg-req">*</span></label><input class="fg-input" id="manName" autocapitalize="characters" placeholder="e.g. 177S-COL-3-MP1-R1"><div class="f-hint" id="manNameErr" style="display:none;color:var(--red-600)">Part Name is required.</div></div><div class="fg"><label class="fg-label" for="manProj">Project</label><input class="fg-input" id="manProj" autocapitalize="characters" placeholder="e.g. 177S"></div><div class="fg"><label class="fg-label" for="manFloor">Floor / WO</label><input class="fg-input" id="manFloor" autocapitalize="characters" placeholder="e.g. F18"></div><div class="fg"><label class="fg-label" for="manType">Part Type</label><input class="fg-input" id="manType" autocapitalize="characters" placeholder="e.g. SC"></div><div class="fg"><label class="fg-label" for="manSize">Size</label><input class="fg-input" id="manSize" autocapitalize="characters" placeholder="e.g. 5001 X 6001"></div><div class="fg"><label class="fg-label" for="manQty">Qty Required</label><input class="fg-input" id="manQty" placeholder="e.g. Q-1"></div><div class="fg"><label class="fg-label" for="manCol">Colour</label><input class="fg-input" id="manCol" autocapitalize="characters" placeholder="e.g. AT"></div><div class="mbtns" style="margin-top:14px"><button class="m-ok" id="manOk" type="button">Add Part</button><button class="m-cancel" id="manCancel" type="button">Cancel</button></div></div></div>
 
 <div class="mbg" id="mSkid"><div class="msheet"><div class="mhandle"></div><div class="m-icon-wrap info"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0071E3" stroke-width="2.5" stroke-linecap="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><div class="m-title">Assign Skid Number</div><div class="m-desc" id="mSkidDesc">Assign a skid number to unassigned parts.</div><div class="fg"><label class="fg-label" for="skidNum">Skid Number<span class="fg-req">*</span></label><input class="fg-input" id="skidNum" inputmode="numeric" placeholder="e.g. 1"></div><div class="mbtns"><button class="m-ok" id="skidOk" type="button">Assign</button><button class="m-cancel" id="skidCancel" type="button">Cancel</button></div></div></div>
 
 <div class="mbg" id="mDel"><div class="msheet"><div class="mhandle"></div><div class="m-icon-wrap danger"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FF3B30" stroke-width="2.5" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg></div><div class="m-title">Remove This Scan?</div><div class="m-desc">This cannot be undone.</div><div class="data-card" id="mDelData"></div><div class="mbtns"><button class="m-confirm" id="mDelOk" type="button">Remove</button><button class="m-cancel" id="mDelCancel" type="button">Keep It</button></div></div></div>
+
+<div class="mbg" id="mClear"><div class="msheet"><div class="mhandle"></div><div class="m-icon-wrap danger"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FF3B30" stroke-width="2.5" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg></div><div class="m-title">Clear Today's Scans?</div><div class="m-desc">Download or upload the CSV first. This cannot be undone.</div><div class="mbtns"><button class="m-confirm" id="mClearOk" type="button">Clear Scans</button><button class="m-cancel" id="mClearCancel" type="button">Keep Them</button></div></div></div>
 
 <div class="mbg" id="mScan"><div class="msheet"><div class="mhandle"></div><div class="m-icon-wrap info"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0071E3" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></div><div class="m-title">Scan details</div><div class="m-desc">Review the mapped fields from this barcode scan.</div><div class="data-card" id="mScanData"></div><div class="mbtns"><button class="m-ok" id="mScanClose" type="button">Close</button></div></div></div>
 
@@ -522,7 +530,7 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
 */
 
 const PASSWORD='M@trex', DELIM='*';
-const LS={scans:d=>'mx_scans_'+d,cfg:'mx_cfg',lastUp:'mx_lastup',camSize:'mx_camsize',login:'mx_login'};
+const LS={scans:d=>'mx_scans_'+d,cfg:'mx_cfg',lastUp:'mx_lastup',camSize:'mx_camsize',login:'mx_login',synced:d=>'mx_synced_'+d};
 const LOGIN_TTL_MS=30*24*60*60*1000; // stay signed in for 30 days on this phone
 
 const $=id=>document.getElementById(id);
@@ -537,7 +545,7 @@ const fmtT=iso=>iso?new Date(iso).toLocaleTimeString([],{hour:'2-digit',minute:'
 const fmtDT=iso=>iso?new Date(iso).toLocaleDateString([],{month:'short',day:'numeric'})+' '+fmtT(iso):'Never';
 
 let cfg=lsGet(LS.cfg)||{url:'',dev:'MATREX-PHONE',filePrefix:'Matrex_Scans'};
-let scans=[],currentSkid=null,today=todayStr();
+let scans=[],currentSkid=null,today=todayStr(),viewDate=today,syncedCount=0;
 let skidTarget=null,delTarget=null,pendingDup=null;
 let nextMidnightUpload=null,engineLabel='Starting…';
 let lastVal='',lastTime=0;
@@ -545,20 +553,43 @@ const DEBOUNCE_MS=2000;
 let codeReader=null,controls=null,trackRef=null,torchOn=false;
 
 // ── DATA ──────────────────────────────────────────────────
-function loadScans(){scans=lsGet(LS.scans(today))||[];currentSkid=scans.length?(scans[scans.length-1].skid||null):null;}
+function loadScans(){
+  scans=lsGet(LS.scans(today))||[];
+  currentSkid=scans.length?(scans[scans.length-1].skid||null):null;
+  syncedCount=lsGet(LS.synced(today))||0;
+}
 const saveScans=()=>lsSet(LS.scans(today),scans);
+// past days still sit in localStorage under their own date key even though
+// only "today" is ever loaded into the live `scans` array above; this reads
+// any date read-only without disturbing the live array.
+function scansForDate(d){return d===today?scans:(lsGet(LS.scans(d))||[]);}
+function availableDates(){
+  const set=new Set(Object.keys(localStorage).filter(k=>k.startsWith('mx_scans_')).map(k=>k.slice('mx_scans_'.length)));
+  set.add(today); // today may have zero scans (and so no key yet) but must still be selectable
+  return Array.from(set).sort().reverse();
+}
+function fmtDateNice(d){
+  const dt=new Date(d+'T00:00:00');
+  return d===today?'Today — '+dt.toLocaleDateString([],{month:'short',day:'numeric'}):dt.toLocaleDateString([],{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+}
+// pending = scans taken since the last upload that fully matched today's
+// count; only meaningful once a receiver URL is configured, since phone-only
+// mode never syncs at all.
+function pendingCount(){return cfg.url?Math.max(0,scans.length-syncedCount):0;}
 
-function buildCSV(){
+function buildCSVRows(list){
   const h=['DATE','SCAN_TIME','BATCH_SHEET','PROJECT','FLOOR','PART_TYPE','PART_NAME','SIZE','QTY_REQUIRED','COLOUR','SKID','METHOD','FLAG','DEVICE'];
   const q=v=>{
     v=String(v==null?'':v);
     if(/^[=+\-@\t\r]/.test(v))v="'"+v; // neutralize CSV/formula injection when opened in Excel/Sheets
     return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;
   };
-  return[h.join(','),...scans.map(s=>[s.date,s.time,s.batchSheet,s.project,s.floor,s.partType,s.partName,s.size,s.qty,s.colour,s.skid||'',s.method,s.flag||'',cfg.dev].map(q).join(','))].join('\r\n');
+  return[h.join(','),...list.map(s=>[s.date,s.time,s.batchSheet,s.project,s.floor,s.partType,s.partName,s.size,s.qty,s.colour,s.skid||'',s.method,s.flag||'',cfg.dev].map(q).join(','))].join('\r\n');
 }
-const csvName=()=>(cfg.filePrefix||'Matrex_Scans')+'_'+today+'.csv';
-function downloadCSV(){const b=new Blob([buildCSV()],{type:'text/csv;charset=utf-8;'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=csvName();a.click();URL.revokeObjectURL(u);}
+const buildCSV=()=>buildCSVRows(scans);
+const csvName=(d)=>(cfg.filePrefix||'Matrex_Scans')+'_'+(d||today)+'.csv';
+function downloadBlob(csv,filename){const b=new Blob([csv],{type:'text/csv;charset=utf-8;'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=filename;a.click();URL.revokeObjectURL(u);}
+function downloadCSV(){downloadBlob(buildCSV(),csvName());}
 
 // ── UPLOAD — on every scan (debounced), once a day at midnight, plus
 // manual Upload button. A failed upload no longer just waits for the next
@@ -575,6 +606,7 @@ async function uploadToServer(reason){
     const r=await fetch(cfg.url+'/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:csvName(),csv:buildCSV(),device:cfg.dev,date:today,count:scans.length,reason})});
     if(!r.ok)throw new Error('HTTP '+r.status);
     const ts=new Date().toISOString();lsSet(LS.lastUp,ts);
+    syncedCount=scans.length;lsSet(LS.synced(today),syncedCount);
     clearTimeout(retryTimer);retryDelay=30000;
     setSyncUI('ok','Uploaded '+fmtT(ts));refreshSettings();uploading=false;return true;
   }catch(e){
@@ -630,7 +662,24 @@ function updateSyncNext(){
 }
 setInterval(updateSyncNext,60000);
 window.addEventListener('online',()=>{if(cfg.url&&scans.length)uploadToServer('reconnect');});
-function setSyncUI(st,msg){$('syncbar').className=st||'';$('syncTxt').textContent=msg||'Saved on phone';}
+function setSyncUI(st,msg){
+  $('syncbar').className=st||'';
+  const p=pendingCount();
+  $('syncTxt').textContent=(msg||'Saved on phone')+(p>0?' · '+p+' pending':'');
+}
+
+// ── NATIVE APP INTEGRATION — only present when wrapped by Capacitor (the
+// Android app build); a no-op on the plain website, since window.Capacitor
+// is never defined there. The browser 'online' event above already covers
+// this in a normal tab, but inside the WebView it can be slow to fire or
+// miss transitions that happen while the app is backgrounded, so the
+// native Network/App plugins give a more reliable trigger to flush any
+// scans that piled up while offline.
+if(typeof Capacitor!=='undefined'&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform()){
+  const{Network,App}=Capacitor.Plugins||{};
+  if(Network)Network.addListener('networkStatusChange',status=>{if(status.connected&&cfg.url&&scans.length)uploadToServer('native-reconnect');});
+  if(App)App.addListener('appStateChange',state=>{if(state.isActive&&cfg.url&&scans.length)uploadToServer('app-resume');});
+}
 
 // ── WAKE LOCK ─────────────────────────────────────────────
 let wakeLock=null;
@@ -648,7 +697,12 @@ function setEngine(l,cls){
 }
 function setCamMsg(msg,isErr){
   const el=$('camStatus');el.classList.remove('gone');
-  el.innerHTML=`<svg class="spin" viewBox="0 0 24 24" fill="none" stroke="${isErr?'#FFB4AD':'white'}" stroke-width="2.5" stroke-linecap="round" style="width:28px;height:28px"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg><span style="color:${isErr?'#FFB4AD':'rgba(255,255,255,.85)'};font-size:13px;white-space:pre-line;text-align:center">${msg}</span>`;
+  const icon=isErr
+    ?`<svg viewBox="0 0 24 24" fill="none" stroke="#FFB4AD" stroke-width="2.5" stroke-linecap="round" style="width:28px;height:28px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><circle cx="12" cy="16" r="1" fill="#FFB4AD" stroke="none"/></svg>`
+    :`<svg class="spin" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" style="width:28px;height:28px"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>`;
+  const retryBtn=isErr?`<button id="camRetryBtn" type="button" class="btn btn-outline" style="width:auto;padding:10px 22px;margin-top:2px">Retry Camera</button>`:'';
+  el.innerHTML=`${icon}<span style="color:${isErr?'#FFB4AD':'rgba(255,255,255,.85)'};font-size:13px;white-space:pre-line;text-align:center">${msg}</span>${retryBtn}`;
+  if(isErr)$('camRetryBtn').addEventListener('click',()=>{$('httpsWarn').style.display='none';startScanner();});
 }
 
 // ── CAMERA SIZE — live slider, persisted per phone ─────────
@@ -961,12 +1015,14 @@ function renderRecent(){
 }
 function renderFull(q){
   q=(q||'').trim().toUpperCase();
-  $('listSub').textContent=today+' · '+scans.length+' part'+(scans.length===1?'':'s');
+  const list=scansForDate(viewDate);
+  const editable=viewDate===today;
+  $('listSub').textContent=fmtDateNice(viewDate)+' · '+list.length+' part'+(list.length===1?'':'s');
   const el=$('fullList');
-  const rows=q?scans.filter(s=>s.partName.toUpperCase().includes(q)||(s.project||'').toUpperCase().includes(q)):scans;
+  const rows=q?list.filter(s=>s.partName.toUpperCase().includes(q)||(s.project||'').toUpperCase().includes(q)):list;
   if(!rows.length){el.innerHTML='<div class="empty-box"><div class="et">'+(q?'No matches':'No scans yet')+'</div></div>';return;}
   const groups={};
-  rows.forEach((s,i)=>{const k=s.skid||'__';(groups[k]=groups[k]||[]).push({s,i:scans.indexOf(s)});});
+  rows.forEach((s)=>{const k=s.skid||'__';(groups[k]=groups[k]||[]).push({s,i:list.indexOf(s)});});
   let html='';
   Object.entries(groups).forEach(([sk,items])=>{
     if(sk!=='__')html+=`<div class="skid-hdr">Skid ${esc(sk)} — ${items.length} part${items.length===1?'':'s'}</div>`;
@@ -974,17 +1030,31 @@ function renderFull(q){
       const dc=s.flag==='DUPLICATE'?'dup':s.flag==='WRONG_PART'?'wrong':s.method==='MANUAL'?'manual':'';
       const fp=s.flag==='DUPLICATE'?'<span class="flag-pill fp-dup">DUP</span>':s.flag==='WRONG_PART'?'<span class="flag-pill fp-wrong">WRONG</span>':'';
       const sub=[s.batchSheet,s.project,s.floor,s.partType,s.size,s.qty,s.colour].filter(Boolean).map(esc).join(' · ');
-      html+=`<div class="fl-row" onclick="openScanDetail(${i})" style="cursor:pointer"><div class="fl-num">${i+1}</div><div class="fl-dot ${dc}"></div><div class="fl-info"><div class="fl-name">${esc(s.partName)}${fp}</div>${sub?`<div class="fl-sub">${sub} · ${fmtT(s.time)} · ${s.method}</div>`:''}</div><div class="fl-acts"><button class="fl-btn sk" onclick="event.stopPropagation();openSkidRow(${i})" aria-label="Skid" type="button"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></button><button class="fl-btn dl" onclick="event.stopPropagation();openDel(${i})" aria-label="Remove" type="button"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></div></div>`;
+      const acts=editable?`<div class="fl-acts"><button class="fl-btn sk" onclick="event.stopPropagation();openSkidRow(${i})" aria-label="Skid" type="button"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></button><button class="fl-btn dl" onclick="event.stopPropagation();openDel(${i})" aria-label="Remove" type="button"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></div>`:'';
+      html+=`<div class="fl-row" onclick="openScanDetail(${i})" style="cursor:pointer"><div class="fl-num">${i+1}</div><div class="fl-dot ${dc}"></div><div class="fl-info"><div class="fl-name">${esc(s.partName)}${fp}</div>${sub?`<div class="fl-sub">${sub} · ${fmtT(s.time)} · ${s.method}</div>`:''}</div>${acts}</div>`;
     });
   });
   el.innerHTML=html;
 }
 $('searchInp').addEventListener('input',e=>renderFull(e.target.value));
+function populateDatePicker(){
+  const sel=$('listDatePick');
+  sel.innerHTML=availableDates().map(d=>`<option value="${d}"${d===viewDate?' selected':''}>${esc(fmtDateNice(d))}</option>`).join('');
+}
+$('listDatePick').addEventListener('change',e=>{viewDate=e.target.value;$('searchInp').value='';renderFull();});
+$('bListDownload').onclick=()=>{
+  const list=scansForDate(viewDate);
+  const b=$('bListDownload'),old=b.textContent;
+  if(!list.length){b.textContent='No scans';setTimeout(()=>b.textContent=old,1500);return;}
+  downloadBlob(buildCSVRows(list),csvName(viewDate));
+  b.textContent='Saved!';setTimeout(()=>b.textContent=old,1500);
+};
 function renderAll(){updateCounters();renderRecent();}
 
 // ── SETTINGS ──────────────────────────────────────────────
 function refreshSettings(){
   $('setFile').textContent=csvName();$('setCnt').textContent=scans.length;
+  $('setPending').textContent=pendingCount();
   $('setEng').textContent=engineLabel;$('setLastUp').textContent=fmtDT(lsGet(LS.lastUp));
   $('setNextUp').textContent=nextMidnightUpload?nextMidnightUpload.toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
   const srv=$('setSrv');
@@ -1017,6 +1087,7 @@ $('bSaveSet').onclick=()=>{
   if(u&&!validUrl(u)){showFlash('bad','Receiver URL must start with http:// or https://');return;}
   const prefix=$('setFilePrefix').value.trim().replace(/[\\/:*?"<>|]/g,'').replace(/\s+/g,'_');
   cfg.url=u;cfg.dev=$('setDev').value.trim()||'MATREX-PHONE';cfg.filePrefix=prefix||'Matrex_Scans';lsSet(LS.cfg,cfg);show('scrScan');refreshSettings();showFlash('ok','Settings saved');
+  if(cfg.url&&scans.length)scheduleAutoUpload(); // flush anything already queued instead of waiting for the next scan
 };
 $('bTestConn').onclick=async()=>{
   const u=$('setUrl').value.trim().replace(/\/+$/,'');
@@ -1029,7 +1100,13 @@ $('bTestConn').onclick=async()=>{
     $('connRes').textContent=isMixedContent(u)?'Blocked — this app is https, receiver must be too.':'Cannot reach server. Check URL and WiFi.';
   }
 };
-$('bClear').onclick=()=>{if(!confirm('Clear all of today\'s scans?\n\nDownload or upload the CSV first.'))return;scans=[];currentSkid=null;saveScans();updateCounters();renderRecent();show('scrScan');showFlash('bad','Scans cleared');};
+$('bClear').onclick=()=>modal('mClear',true);
+$('mClearCancel').onclick=()=>modal('mClear',false);
+$('mClearOk').onclick=()=>{
+  modal('mClear',false);
+  scans=[];currentSkid=null;syncedCount=0;saveScans();lsSet(LS.synced(today),0);
+  updateCounters();renderRecent();show('scrScan');showFlash('bad','Scans cleared');
+};
 $('bUpload').onclick=async()=>{if(!cfg.url){showFlash('bad','No server URL — open Settings.');return;}if(!scans.length){showFlash('bad','Nothing scanned yet.');return;}const ok=await uploadToServer('manual');if(ok)showFlash('ok',csvName()+' uploaded');};
 
 // ── SKID ──────────────────────────────────────────────────
@@ -1043,7 +1120,7 @@ window.openDel=i=>{delTarget=i;$('mDelData').innerHTML=dataHtml(scans[i]);modal(
 $('mDelOk').onclick=()=>{if(delTarget!==null){const n=scans[delTarget].partName;scans.splice(delTarget,1);saveScans();updateCounters();renderRecent();renderFull($('searchInp').value);delTarget=null;showFlash('bad',n+' removed');}modal('mDel',false);};
 $('mDelCancel').onclick=()=>modal('mDel',false);
 
-window.openScanDetail=i=>{if(typeof scans[i]==='undefined')return;$('mScanData').innerHTML=dataHtml(scans[i]);modal('mScan',true);};
+window.openScanDetail=i=>{const list=scansForDate(viewDate);if(typeof list[i]==='undefined')return;$('mScanData').innerHTML=dataHtml(list[i]);modal('mScan',true);};
 $('mScanClose').onclick=()=>modal('mScan',false);
 
 // ── DUPLICATE ────────────────────────────────────────────
@@ -1051,11 +1128,16 @@ $('mDupAdd').onclick=()=>{modal('mDup',false);if(pendingDup){pendingDup.flag='DU
 $('mDupSkip').onclick=()=>{modal('mDup',false);pendingDup=null;showFlash('bad','Duplicate skipped');};
 
 // ── MANUAL ENTRY ───────────────────────────────────────────
-$('bManual').onclick=()=>{['manName','manProj','manFloor','manType','manSize','manQty','manCol'].forEach(id=>$(id).value='');modal('mManual',true);$('manName').focus();};
-$('manCopy').onclick=()=>{if(!scans.length){alert('No scans yet.');return;}const l=scans[scans.length-1];$('manProj').value=l.project||'';$('manFloor').value=l.floor||'';$('manType').value=l.partType||'';$('manCol').value=l.colour||'';showFlash('ok','Fields copied');};
+$('bManual').onclick=()=>{['manName','manProj','manFloor','manType','manSize','manQty','manCol'].forEach(id=>$(id).value='');$('manName').classList.remove('err');$('manNameErr').style.display='none';modal('mManual',true);$('manName').focus();};
+$('manName').addEventListener('input',()=>{$('manName').classList.remove('err');$('manNameErr').style.display='none';});
+$('manCopy').onclick=()=>{
+  const b=$('manCopy');
+  if(!scans.length){const old=b.textContent;b.textContent='No scans yet';setTimeout(()=>b.textContent=old,1500);return;}
+  const l=scans[scans.length-1];$('manProj').value=l.project||'';$('manFloor').value=l.floor||'';$('manType').value=l.partType||'';$('manCol').value=l.colour||'';showFlash('ok','Fields copied');
+};
 $('manOk').onclick=()=>{
   const name=$('manName').value.trim().toUpperCase();
-  if(!name){$('manName').focus();alert('Part Name is required.');return;}
+  if(!name){$('manName').classList.add('err');$('manNameErr').style.display='block';$('manName').focus();return;}
   modal('mManual',false);
   const part={batchSheet:'',project:$('manProj').value.trim().toUpperCase(),floor:$('manFloor').value.trim().toUpperCase(),partType:$('manType').value.trim().toUpperCase(),partName:name,size:$('manSize').value.trim().toUpperCase(),qty:$('manQty').value.trim(),colour:$('manCol').value.trim().toUpperCase(),raw:'',date:today,time:new Date().toISOString(),method:'MANUAL',flag:'',skid:currentSkid||''};
   const key=scanKey(part);
@@ -1068,8 +1150,9 @@ $('manCancel').onclick=()=>modal('mManual',false);
 $('bDone').onclick=()=>{if(!scans.length){showFlash('bad','Nothing scanned yet.');return;}downloadCSV();showFlash('ok','CSV saved to Downloads');};
 
 // ── NAV ────────────────────────────────────────────────────
-$('bList').onclick=()=>{$('searchInp').value='';renderFull();show('scrList');};
-$('bExpandList').onclick=()=>{$('searchInp').value='';renderFull();show('scrList');};
+function openListScreen(){viewDate=today;populateDatePicker();$('searchInp').value='';renderFull();show('scrList');}
+$('bList').onclick=openListScreen;
+$('bExpandList').onclick=openListScreen;
 $('bBackList').onclick=()=>show('scrScan');
 
 // ── LOGIN ──────────────────────────────────────────────────
