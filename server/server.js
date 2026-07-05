@@ -27,7 +27,7 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// ── DEVICE APPROVAL — gate on the app's own /upload + /check calls ──
+// ── DEVICE APPROVAL — gate on the app's own /upload calls ──
 const upsertDevice = db.prepare(`
   INSERT INTO devices (device_id, device_name, status, first_seen, last_seen, ip)
   VALUES (@device_id, @device_name, 'PENDING', @now, @now, @ip)
@@ -70,26 +70,22 @@ app.post('/admin/api/devices/:id/revoke', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-// ── STAGES — reference data for the phone's stage picker ──
-const listStages = db.prepare('SELECT code, name FROM stages ORDER BY sort');
-app.get('/stages', (req, res) => res.json({ ok: true, stages: listStages.all() }));
-
 // ── UPLOAD — the phone resends the *whole day's* rows array on every
-// call (debounced ~1.2s after each scan, plus midnight/manual/retry), so
-// this upserts by scan_id rather than blindly inserting, and additionally
+// call (debounced after each scan, plus midnight/manual/retry), so this
+// upserts by scan_id rather than blindly inserting, and additionally
 // writes the CSV to disk as a backup.
 const upsertScan = db.prepare(`
   INSERT INTO scans (
     scan_id, date, scanned_at, received_at, device, device_id,
     batch_sheet, project, floor, part_type, part_name, size, qty, colour,
-    skid, stage, method, flag, matched, raw
+    skid, method, flag, raw
   ) VALUES (
     @scan_id, @date, @scanned_at, @received_at, @device, @device_id,
     @batch_sheet, @project, @floor, @part_type, @part_name, @size, @qty, @colour,
-    @skid, @stage, @method, @flag, @matched, @raw
+    @skid, @method, @flag, @raw
   )
   ON CONFLICT(scan_id) DO UPDATE SET
-    skid=@skid, stage=@stage, flag=@flag, matched=@matched
+    skid=@skid, flag=@flag
 `);
 
 app.post('/upload', deviceGate, (req, res) => {
@@ -121,36 +117,13 @@ app.post('/upload', deviceGate, (req, res) => {
         qty: row.qty || null,
         colour: row.colour || null,
         skid: row.skid || null,
-        stage: row.stage || null,
         method: row.method || null,
         flag: row.flag || null,
-        matched: row.matched === true ? 'TRUE' : row.matched === false ? 'FALSE' : '',
         raw: row.raw || null
       });
     }
   }
   res.json({ ok: true });
-});
-
-// ── CHECK — cross-device duplicate-completion lookup for a single scan,
-// called live right after each scan (best-effort, not required for the
-// scan to already be saved locally/uploaded).
-const getStage = db.prepare('SELECT code FROM stages WHERE code = ?');
-const getCheck = db.prepare('SELECT * FROM stage_checks WHERE part_name = ? AND stage = ?');
-const insertCheck = db.prepare('INSERT INTO stage_checks (part_name, stage, first_device, first_time) VALUES (?,?,?,?)');
-
-app.post('/check', deviceGate, (req, res) => {
-  const { partName, stage, device } = req.body || {};
-  if (!partName || !stage) return res.status(400).json({ ok: false, error: 'partName and stage required' });
-  if (!getStage.get(stage)) return res.json({ ok: true, status: 'NO_SUCH_STAGE' });
-
-  const key = String(partName).trim().toUpperCase();
-  const existing = getCheck.get(key, stage);
-  if (existing) {
-    return res.json({ ok: true, status: 'MATCHED_ALREADY', completedByDevice: existing.first_device || '' });
-  }
-  insertCheck.run(key, stage, device || '', new Date().toISOString());
-  res.json({ ok: true, status: 'MATCHED_NEW' });
 });
 
 // Reporting only, admin-key protected.

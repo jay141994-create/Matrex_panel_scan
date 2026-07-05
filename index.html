@@ -223,13 +223,6 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
 .skid-hdr{background:var(--blue-50);padding:8px 16px;font-size:12px;font-weight:800;color:var(--blue-700);text-transform:uppercase;letter-spacing:1.2px}
 .flag-pill{display:inline-block;border-radius:var(--pill);font-size:11px;font-weight:800;padding:2px 7px;margin-left:5px;letter-spacing:.4px}
 .fp-dup{background:var(--red-50);color:var(--red-600)}.fp-wrong{background:var(--amber-50);color:var(--amber-700)}
-.fp-matched{background:var(--green-50);color:var(--green-700)}.fp-already{background:var(--amber-50);color:var(--amber-700)}
-
-/* STAGE PICKER */
-.stage-row{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--gray-100);border:1.5px solid transparent;border-radius:var(--r);padding:13px 16px;margin-bottom:8px;font-size:15px;font-weight:600;color:var(--gray-900);cursor:pointer;font-family:inherit;transition:all .15s var(--ease)}
-.stage-row:active{transform:scale(.98)}
-.stage-row.sel{background:var(--blue-50);border-color:var(--blue-600);color:var(--blue-700)}
-.stage-row svg{flex-shrink:0;color:var(--blue-600)}
 
 /* SETTINGS */
 .s-page{padding:16px;max-width:480px;margin:0 auto}
@@ -335,11 +328,6 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
         <span style="color:var(--gray-500)">Scanner</span>
         <span class="eng-val" id="engVal">Starting…</span>
       </div>
-      <button class="eng-pill" id="bStagePill" type="button" style="margin-bottom:12px;border:none;cursor:pointer">
-        <div class="eng-dot" style="background:var(--blue-600)"></div>
-        <span style="color:var(--gray-500)">Stage</span>
-        <span class="eng-val" id="stageVal" style="color:var(--blue-600)">Not set</span>
-      </button>
     </div>
 
     <div class="counters">
@@ -512,7 +500,6 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
 
 <div class="mbg" id="mSkid"><div class="msheet"><div class="mhandle"></div><div class="m-icon-wrap info"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0071E3" stroke-width="2.5" stroke-linecap="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div><div class="m-title">Assign Skid Number</div><div class="m-desc" id="mSkidDesc">Assign a skid number to unassigned parts.</div><div class="fg"><label class="fg-label" for="skidNum">Skid Number<span class="fg-req">*</span></label><input class="fg-input" id="skidNum" inputmode="numeric" placeholder="e.g. 1"></div><div class="mbtns"><button class="m-ok" id="skidOk" type="button">Assign</button><button class="m-cancel" id="skidCancel" type="button">Cancel</button></div></div></div>
 
-<div class="mbg" id="mStage"><div class="msheet"><div class="mhandle"></div><div class="m-icon-wrap info"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0071E3" stroke-width="2.5" stroke-linecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div><div class="m-title">Production Stage</div><div class="m-desc">Every scan is checked against this stage's expected-parts list.</div><div id="stageList"></div><div class="mbtns"><button class="m-cancel" id="stageCancel" type="button">Cancel</button></div></div></div>
 
 <div class="mbg" id="mDel"><div class="msheet"><div class="mhandle"></div><div class="m-icon-wrap danger"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FF3B30" stroke-width="2.5" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg></div><div class="m-title">Remove This Scan?</div><div class="m-desc">This cannot be undone.</div><div class="data-card" id="mDelData"></div><div class="mbtns"><button class="m-confirm" id="mDelOk" type="button">Remove</button><button class="m-cancel" id="mDelCancel" type="button">Keep It</button></div></div></div>
 
@@ -547,23 +534,7 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
 */
 
 const PASSWORD='M@trex', DELIM='*';
-const LS={scans:d=>'mx_scans_'+d,cfg:'mx_cfg',lastUp:'mx_lastup',camSize:'mx_camsize',login:'mx_login',synced:d=>'mx_synced_'+d,stages:'mx_stages_cache',deviceId:'mx_device_id'};
-// Generic placeholders until the backend's real stage list is fetched —
-// the actual production stages aren't finalized yet, so nothing here is
-// meant to be a real stage name. Once /admin/stages is configured server
-// side, GET /stages overwrites this cache and the picker updates with zero
-// app-code changes.
-const DEFAULT_STAGES=[{code:'STAGE1',name:'Stage 1'},{code:'STAGE2',name:'Stage 2'},{code:'STAGE3',name:'Stage 3'},{code:'STAGE4',name:'Stage 4'}];
-function getStagesList(){return lsGet(LS.stages)||DEFAULT_STAGES;}
-async function refreshStagesFromServer(){
-  if(!cfg.url)return;
-  try{
-    const r=await fetch(cfg.url+'/stages',{signal:AbortSignal.timeout(5000)});
-    if(!r.ok)return;
-    const data=await r.json();
-    if(Array.isArray(data.stages)&&data.stages.length)lsSet(LS.stages,data.stages);
-  }catch(e){/* offline or unreachable — keep using whatever's cached */}
-}
+const LS={scans:d=>'mx_scans_'+d,cfg:'mx_cfg',lastUp:'mx_lastup',camSize:'mx_camsize',login:'mx_login',synced:d=>'mx_synced_'+d,deviceId:'mx_device_id'};
 const LOGIN_TTL_MS=30*24*60*60*1000; // stay signed in for 30 days on this phone
 
 const $=id=>document.getElementById(id);
@@ -591,7 +562,7 @@ function registerDevice(){
     .then(r=>r.json()).then(j=>{deviceStatus=j.status||'UNKNOWN';return deviceStatus;})
     .catch(()=>{deviceStatus='UNKNOWN';return deviceStatus;});
 }
-let scans=[],currentSkid=null,currentStage=null,today=todayStr(),viewDate=today,syncedCount=0;
+let scans=[],currentSkid=null,today=todayStr(),viewDate=today,syncedCount=0;
 let skidTarget=null,delTarget=null,pendingDup=null;
 let nextMidnightUpload=null,engineLabel='Starting…';
 let lastVal='',lastTime=0;
@@ -602,7 +573,6 @@ let codeReader=null,controls=null,trackRef=null,torchOn=false;
 function loadScans(){
   scans=lsGet(LS.scans(today))||[];
   currentSkid=scans.length?(scans[scans.length-1].skid||null):null;
-  currentStage=scans.length?(scans[scans.length-1].stage||null):null;
   syncedCount=lsGet(LS.synced(today))||0;
 }
 const saveScans=()=>lsSet(LS.scans(today),scans);
@@ -625,20 +595,13 @@ function fmtDateNice(d){
 function pendingCount(){return cfg.url?Math.max(0,scans.length-syncedCount):0;}
 
 function buildCSVRows(list){
-  // STAGE/MATCHED appended at the end (not inserted mid-row) so existing
-  // column positions never shift for anyone with formulas keyed to them.
-  // MATCHED here is best-effort (from this phone's own live /check calls) —
-  // the server's GET /export/day/:date is the authoritative value, computed
-  // fresh from every device's uploads regardless of whether any single
-  // phone's live check ever completed.
-  const h=['DATE','SCAN_TIME','BATCH_SHEET','PROJECT','FLOOR','PART_TYPE','PART_NAME','SIZE','QTY_REQUIRED','COLOUR','SKID','METHOD','FLAG','DEVICE','STAGE','MATCHED'];
+  const h=['DATE','SCAN_TIME','BATCH_SHEET','PROJECT','FLOOR','PART_TYPE','PART_NAME','SIZE','QTY_REQUIRED','COLOUR','SKID','METHOD','FLAG','DEVICE'];
   const q=v=>{
     v=String(v==null?'':v);
     if(/^[=+\-@\t\r]/.test(v))v="'"+v; // neutralize CSV/formula injection when opened in Excel/Sheets
     return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;
   };
-  const matchedText=s=>s.matched===true?'TRUE':s.matched===false?'FALSE':'';
-  return[h.join(','),...list.map(s=>[s.date,s.time,s.batchSheet,s.project,s.floor,s.partType,s.partName,s.size,s.qty,s.colour,s.skid||'',s.method,s.flag||'',cfg.dev,s.stage||'',matchedText(s)].map(q).join(','))].join('\r\n');
+  return[h.join(','),...list.map(s=>[s.date,s.time,s.batchSheet,s.project,s.floor,s.partType,s.partName,s.size,s.qty,s.colour,s.skid||'',s.method,s.flag||'',cfg.dev].map(q).join(','))].join('\r\n');
 }
 const buildCSV=()=>buildCSVRows(scans);
 const csvName=(d)=>(cfg.filePrefix||'Matrex_Scans')+'_'+(d||today)+'.csv';
@@ -659,10 +622,9 @@ async function uploadToServer(reason){
   try{
     // `rows` mirrors the scan objects directly (same field names the
     // backend expects: batchSheet/project/floor/partType/partName/size/
-    // qty/colour/skid/method/flag/stage/time) so the server can run its
-    // own authoritative matching pass without re-parsing the CSV text,
-    // which has Excel-safety quoting applied that would make it lossy
-    // to reverse.
+    // qty/colour/skid/method/flag/time) so the server doesn't need to
+    // re-parse the CSV text, which has Excel-safety quoting applied that
+    // would make it lossy to reverse.
     const r=await fetch(cfg.url+'/upload',{method:'POST',headers:{'Content-Type':'application/json','X-Api-Key':cfg.apiKey||''},body:JSON.stringify({filename:csvName(),csv:buildCSV(),device:cfg.dev,device_id:deviceId,date:today,count:scans.length,reason,rows:scans})});
     if(r.status===403){
       const j=await r.json().catch(()=>({}));
@@ -692,7 +654,7 @@ function scheduleAutoUpload(){
   clearTimeout(autoUploadTimer);
   if(!navigator.onLine){setSyncUI('','Saved on phone — will sync when online');return;}
   setSyncUI('syncing','Syncing…');
-  autoUploadTimer=setTimeout(()=>{uploadToServer('auto');},1200);
+  autoUploadTimer=setTimeout(()=>{uploadToServer('auto');},300);
 }
 // ── MIXED CONTENT — an https:// page (GitHub Pages) cannot fetch() a
 // plain http:// receiver, even on the local LAN; browsers block it as
@@ -709,38 +671,6 @@ function checkMixedWarn(){
   $('urlMixedWarn').style.display=isMixedContent($('setUrl').value.trim())?'block':'none';
 }
 
-// ── LIVE STAGE-MATCH CHECK ─────────────────────────────────
-// Fire-and-forget, right after a scan is already saved locally — never
-// blocks or delays the scan-save path above. If this never resolves
-// (offline, timeout, server down) the scan just shows no match badge;
-// the server's own matching pass during /upload is the authoritative
-// source, so nothing is ever permanently wrong, only briefly unconfirmed
-// on-screen. Guarded on stage+url+online so it's a true no-op otherwise.
-async function performLiveCheck(idx){
-  const part=scans[idx];
-  if(!part||!part.stage||!cfg.url||!navigator.onLine)return;
-  try{
-    const r=await fetch(cfg.url+'/check',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','X-Api-Key':cfg.apiKey||''},
-      body:JSON.stringify({partName:part.partName,stage:part.stage,device:cfg.dev,device_id:deviceId,scanTime:part.time}),
-      signal:AbortSignal.timeout(4000)
-    });
-    if(!r.ok)return;
-    const data=await r.json();
-    if(scans[idx]!==part)return; // scan list changed since we started (e.g. deleted) — don't write into the wrong slot
-    part.matched=data.status==='MATCHED_NEW'||data.status==='MATCHED_ALREADY';
-    part.matchStatus=data.status;
-    part.matchInfo=data.completedByDevice||'';
-    saveScans();updateCounters();renderRecent();
-    if($('scrList').classList.contains('on'))renderFull($('searchInp').value);
-  }catch(e){/* offline/timeout — leave unverified, /upload's pass reconciles it later */}
-}
-function matchPill(s){
-  if(s.matchStatus==='MATCHED_NEW')return'<span class="flag-pill fp-matched">MATCHED</span>';
-  if(s.matchStatus==='MATCHED_ALREADY')return'<span class="flag-pill fp-already">ALREADY DONE</span>';
-  return'';
-}
 function msUntilNextMidnight(){
   const n=new Date();
   const mid=new Date(n.getFullYear(),n.getMonth(),n.getDate()+1,0,1,0); // 00:01 next day
@@ -1001,7 +931,7 @@ function parsePayload(raw){
     size:(f[5]||'').trim(),
     qty:(f[6]||'').trim(),
     colour:(f[7]||'').trim(),
-    raw,date:today,time:new Date().toISOString(),method:'SCAN',flag:'',skid:currentSkid||'',stage:currentStage||'',scanId:uuid()
+    raw,date:today,time:new Date().toISOString(),method:'SCAN',flag:'',skid:currentSkid||'',scanId:uuid()
   };
 }
 // Duplicate detection compares every identifying field, not just Tag +
@@ -1016,18 +946,10 @@ function scanKey(p){
 // the same titles as the verified barcode spec (Programme/Sheet Number
 // * Project * Floor * Type * Tag * Dimension * Qty * Colour) - this is
 // the full set, not a trimmed subset, so nothing scanned is hidden here.
-function matchStatusText(p){
-  if(p.matchStatus==='MATCHED_NEW')return'Matched (this scan)';
-  if(p.matchStatus==='MATCHED_ALREADY')return'Already done'+(p.matchInfo?' — '+p.matchInfo:'');
-  if(p.matchStatus==='NOT_EXPECTED')return'Not on stage list';
-  if(p.matchStatus==='NO_SUCH_STAGE')return'Stage not recognized by server';
-  return'';
-}
 function dataHtml(p){
-  const stageName=p.stage?(getStagesList().find(s=>s.code===p.stage)||{}).name||p.stage:'';
   return[['Programme / Sheet Number',p.batchSheet],['Project',p.project],['Floor',p.floor],
          ['Type',p.partType],['Tag',p.partName],['Dimension',p.size],
-         ['Qty',p.qty],['Colour',p.colour],['Stage',stageName],['Match',matchStatusText(p)]]
+         ['Qty',p.qty],['Colour',p.colour]]
     .filter(([,v])=>v).map(([k,v])=>`<div class="data-row"><span class="data-k">${esc(k)}</span><span class="data-v">${esc(v)}</span></div>`).join('');
 }
 
@@ -1069,15 +991,13 @@ function handleRaw(raw,method){
 }
 
 function commit(part,flag,note){
-  if(flag)part.flag=flag;part.skid=currentSkid||'';part.stage=currentStage||'';
+  if(flag)part.flag=flag;part.skid=currentSkid||'';
   scans.push(part);saveScans();
-  const idx=scans.length-1;
   beep('ok');updateCounters();renderRecent();
   const base=part.partName+(part.colour?' — '+part.colour:'');
   showFlash(flag==='WRONG_PART'?'bad':'ok',note?base+' ('+note+')':base);
   if(part.method==='SCAN')showScanToast(part.partName);
   if(!cfg.url)setSyncUI('','Saved on phone');else scheduleAutoUpload();
-  performLiveCheck(idx);
 }
 
 // ── SCAN TOAST — quick TAG confirmation over the camera view ───────
@@ -1107,8 +1027,6 @@ function updateCounters(){
   $('nTotal').textContent=scans.length;
   $('nFlag').textContent=scans.filter(s=>s.flag).length;
   $('nSkid').textContent=currentSkid||'—';
-  const stage=getStagesList().find(s=>s.code===currentStage);
-  $('stageVal').textContent=stage?stage.name:'Not set';
 }
 function renderRecent(){
   const el=$('list');
@@ -1121,7 +1039,7 @@ function renderRecent(){
     const i=scans.length-1-j;
     const cls=s.flag==='DUPLICATE'?'is-dup':s.flag==='WRONG_PART'?'is-wrong':s.method==='MANUAL'?'is-manual':'';
     const sub=[s.batchSheet,s.project,s.floor,s.partType,s.size,s.qty].filter(Boolean).map(esc).join(' · ');
-    return`<div class="srow ${cls}" onclick="openScanDetail(${i})"><div class="s-dot2"></div><div class="srow-info"><div class="srow-name">${esc(s.partName)}${s.colour?' <span style="color:var(--gray-500);font-weight:500">'+esc(s.colour)+'</span>':''}${matchPill(s)}</div>${sub?`<div class="srow-sub">${sub}</div>`:''}</div><div class="srow-time">${fmtT(s.time)}</div></div>`;
+    return`<div class="srow ${cls}" onclick="openScanDetail(${i})"><div class="s-dot2"></div><div class="srow-info"><div class="srow-name">${esc(s.partName)}${s.colour?' <span style="color:var(--gray-500);font-weight:500">'+esc(s.colour)+'</span>':''}</div>${sub?`<div class="srow-sub">${sub}</div>`:''}</div><div class="srow-time">${fmtT(s.time)}</div></div>`;
   }).join('');
 }
 function renderFull(q){
@@ -1139,11 +1057,10 @@ function renderFull(q){
     if(sk!=='__')html+=`<div class="skid-hdr">Skid ${esc(sk)} — ${items.length} part${items.length===1?'':'s'}</div>`;
     items.forEach(({s,i})=>{
       const dc=s.flag==='DUPLICATE'?'dup':s.flag==='WRONG_PART'?'wrong':s.method==='MANUAL'?'manual':'';
-      const fp=(s.flag==='DUPLICATE'?'<span class="flag-pill fp-dup">DUP</span>':s.flag==='WRONG_PART'?'<span class="flag-pill fp-wrong">WRONG</span>':'')+matchPill(s);
-      const notExpectedNote=s.matchStatus==='NOT_EXPECTED'?' · not on stage list':'';
+      const fp=s.flag==='DUPLICATE'?'<span class="flag-pill fp-dup">DUP</span>':s.flag==='WRONG_PART'?'<span class="flag-pill fp-wrong">WRONG</span>':'';
       const sub=[s.batchSheet,s.project,s.floor,s.partType,s.size,s.qty,s.colour].filter(Boolean).map(esc).join(' · ');
       const acts=editable?`<div class="fl-acts"><button class="fl-btn sk" onclick="event.stopPropagation();openSkidRow(${i})" aria-label="Skid" type="button"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></button><button class="fl-btn dl" onclick="event.stopPropagation();openDel(${i})" aria-label="Remove" type="button"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></div>`:'';
-      html+=`<div class="fl-row" onclick="openScanDetail(${i})" style="cursor:pointer"><div class="fl-num">${i+1}</div><div class="fl-dot ${dc}"></div><div class="fl-info"><div class="fl-name">${esc(s.partName)}${fp}</div>${sub?`<div class="fl-sub">${sub} · ${fmtT(s.time)} · ${s.method}${notExpectedNote}</div>`:''}</div>${acts}</div>`;
+      html+=`<div class="fl-row" onclick="openScanDetail(${i})" style="cursor:pointer"><div class="fl-num">${i+1}</div><div class="fl-dot ${dc}"></div><div class="fl-info"><div class="fl-name">${esc(s.partName)}${fp}</div>${sub?`<div class="fl-sub">${sub} · ${fmtT(s.time)} · ${s.method}</div>`:''}</div>${acts}</div>`;
     });
   });
   el.innerHTML=html;
@@ -1177,7 +1094,6 @@ const SETTINGS_PASSWORD='3090L4K572';
 function openSettingsScreen(){
   stopScanner(); // camera has no business running while the user isn't on the scan screen
   $('setUrl').value=cfg.url;$('setDev').value=cfg.dev;$('setFilePrefix').value=cfg.filePrefix||'Matrex_Scans';$('setApiKey').value=cfg.apiKey||'';$('connRes').textContent='';refreshSettings();checkMixedWarn();show('scrSettings');
-  refreshStagesFromServer().then(updateCounters);
 }
 $('setUrl').addEventListener('input',checkMixedWarn);
 function trySettingsAuth(){
@@ -1202,7 +1118,6 @@ $('bSaveSet').onclick=async()=>{
   const prefix=$('setFilePrefix').value.trim().replace(/[\\/:*?"<>|]/g,'').replace(/\s+/g,'_');
   cfg.url=u;cfg.dev=$('setDev').value.trim()||'MATREX-PHONE';cfg.filePrefix=prefix||'Matrex_Scans';cfg.apiKey=$('setApiKey').value.trim();lsSet(LS.cfg,cfg);show('scrScan');refreshSettings();
   if(cfg.url&&scans.length)scheduleAutoUpload(); // flush anything already queued instead of waiting for the next scan
-  refreshStagesFromServer().then(updateCounters);
   if(u){const st=await registerDevice();showFlash(st==='APPROVED'?'ok':'bad','Settings saved — device '+st.toLowerCase());}
   else showFlash('ok','Settings saved');
 };
@@ -1238,24 +1153,6 @@ $('bSkid').onclick=()=>{skidTarget=null;const n=scans.filter(s=>!s.skid).length;
 $('skidOk').onclick=()=>{const n=$('skidNum').value.trim();if(!n)return;modal('mSkid',false);if(skidTarget!==null){scans[skidTarget].skid=n;}else{scans.forEach(s=>{if(!s.skid)s.skid=n;});}currentSkid=n;saveScans();updateCounters();renderRecent();renderFull($('searchInp').value);showFlash('ok','Skid '+n+' assigned');};
 $('skidCancel').onclick=()=>modal('mSkid',false);
 
-// ── STAGE ─────────────────────────────────────────────────
-function renderStagePicker(){
-  const check='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>';
-  $('stageList').innerHTML=getStagesList().map(s=>
-    `<button type="button" class="stage-row${s.code===currentStage?' sel':''}" data-code="${esc(s.code)}">${esc(s.name)}${s.code===currentStage?check:''}</button>`
-  ).join('');
-}
-$('bStagePill').onclick=()=>{renderStagePicker();modal('mStage',true);};
-$('stageList').addEventListener('click',e=>{
-  const btn=e.target.closest('.stage-row');
-  if(!btn)return;
-  currentStage=btn.dataset.code;
-  updateCounters();
-  modal('mStage',false);
-  showFlash('ok','Stage set to '+btn.textContent.trim());
-});
-$('stageCancel').onclick=()=>modal('mStage',false);
-
 // ── DELETE ─────────────────────────────────────────────────
 window.openDel=i=>{delTarget=i;$('mDelData').innerHTML=dataHtml(scans[i]);modal('mDel',true);};
 $('mDelOk').onclick=()=>{if(delTarget!==null){const n=scans[delTarget].partName;scans.splice(delTarget,1);saveScans();updateCounters();renderRecent();renderFull($('searchInp').value);delTarget=null;showFlash('bad',n+' removed');}modal('mDel',false);};
@@ -1280,7 +1177,7 @@ $('manOk').onclick=()=>{
   const name=$('manName').value.trim().toUpperCase();
   if(!name){$('manName').classList.add('err');$('manNameErr').style.display='block';$('manName').focus();return;}
   modal('mManual',false);
-  const part={batchSheet:'',project:$('manProj').value.trim().toUpperCase(),floor:$('manFloor').value.trim().toUpperCase(),partType:$('manType').value.trim().toUpperCase(),partName:name,size:$('manSize').value.trim().toUpperCase(),qty:$('manQty').value.trim(),colour:$('manCol').value.trim().toUpperCase(),raw:'',date:today,time:new Date().toISOString(),method:'MANUAL',flag:'',skid:currentSkid||'',stage:currentStage||'',scanId:uuid()};
+  const part={batchSheet:'',project:$('manProj').value.trim().toUpperCase(),floor:$('manFloor').value.trim().toUpperCase(),partType:$('manType').value.trim().toUpperCase(),partName:name,size:$('manSize').value.trim().toUpperCase(),qty:$('manQty').value.trim(),colour:$('manCol').value.trim().toUpperCase(),raw:'',date:today,time:new Date().toISOString(),method:'MANUAL',flag:'',skid:currentSkid||'',scanId:uuid()};
   const key=scanKey(part);
   if(scans.some(s=>scanKey(s)===key&&s.flag!=='DUPLICATE')){pendingDup=part;$('mDupData').innerHTML=dataHtml(part);modal('mDup',true);return;}
   commit(part);
@@ -1341,7 +1238,6 @@ function beep(k){
 // ── BOOT ───────────────────────────────────────────────────
 loadScans();renderAll();scheduleMidnightUpload();checkAuth();
 if('serviceWorker' in navigator && isSecure())navigator.serviceWorker.register('sw.js').catch(()=>{});
-refreshStagesFromServer().then(updateCounters);
 if(cfg.url)registerDevice();
 </script>
 </body>
