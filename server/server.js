@@ -19,7 +19,7 @@ if (fs.existsSync(ADMIN_KEY_PATH)) {
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '5mb' })); // /upload carries the whole day's rows
 app.use(express.static(path.join(__dirname, 'public')));
 
 function requireAdmin(req, res, next) {
@@ -27,18 +27,7 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-const insertScan = db.prepare(`
-  INSERT INTO scans (
-    scan_id, status, date, scanned_at, received_at, device,
-    part_name, batch_sheet, project, floor, part_type, size, qty, colour,
-    skid, method, flag, error_reason, raw
-  ) VALUES (
-    @scan_id, @status, @date, @scanned_at, @received_at, @device,
-    @part_name, @batch_sheet, @project, @floor, @part_type, @size, @qty, @colour,
-    @skid, @method, @flag, @error_reason, @raw
-  )
-`);
-
+// ── DEVICE APPROVAL — gate on the app's own /upload + /check calls ──
 const upsertDevice = db.prepare(`
   INSERT INTO devices (device_id, device_name, status, first_seen, last_seen, ip)
   VALUES (@device_id, @device_name, 'PENDING', @now, @now, @ip)
@@ -48,32 +37,30 @@ const getDevice = db.prepare('SELECT * FROM devices WHERE device_id = ?');
 const listDevices = db.prepare('SELECT * FROM devices ORDER BY first_seen DESC');
 const setDeviceStatus = db.prepare(`UPDATE devices SET status=@status, approved_at=CASE WHEN @status='APPROVED' THEN @now ELSE approved_at END WHERE device_id=@device_id`);
 
-app.get('/health', (req, res) => {
-  res.json({ ok: true, time: new Date().toISOString() });
-});
+function deviceGate(req, res, next) {
+  const id = (req.body && req.body.device_id) || '';
+  if (!id) return res.status(403).json({ ok: false, error: 'device_id required', status: 'UNKNOWN' });
+  const row = getDevice.get(id);
+  if (!row) return res.status(403).json({ ok: false, error: 'not registered', status: 'UNKNOWN' });
+  if (row.status !== 'APPROVED') return res.status(403).json({ ok: false, error: 'not approved', status: row.status });
+  next();
+}
 
-// ── DEVICE REGISTRATION — public (a new phone must be able to ask to join).
-// New devices land as PENDING and are rejected everywhere else until an
-// admin approves them from the dashboard.
+app.get('/health', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
+
 app.post('/devices/register', (req, res) => {
   const { device_id, device_name } = req.body || {};
   if (!device_id) return res.status(400).json({ ok: false, error: 'device_id required' });
   const now = new Date().toISOString();
   upsertDevice.run({ device_id: String(device_id), device_name: device_name || '', now, ip: req.ip });
-  const row = getDevice.get(device_id);
-  res.json({ ok: true, status: row.status });
+  res.json({ ok: true, status: getDevice.get(device_id).status });
 });
-
 app.get('/devices/:id/status', (req, res) => {
   const row = getDevice.get(req.params.id);
   res.json({ ok: true, status: row ? row.status : 'UNKNOWN' });
 });
 
-// ── ADMIN — approval dashboard API, key-protected regardless of whether
-// it's reached via the LAN or the public tunnel URL.
-app.get('/admin/api/devices', requireAdmin, (req, res) => {
-  res.json(listDevices.all());
-});
+app.get('/admin/api/devices', requireAdmin, (req, res) => res.json(listDevices.all()));
 app.post('/admin/api/devices/:id/approve', requireAdmin, (req, res) => {
   setDeviceStatus.run({ device_id: req.params.id, status: 'APPROVED', now: new Date().toISOString() });
   res.json({ ok: true });
@@ -83,75 +70,99 @@ app.post('/admin/api/devices/:id/revoke', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-function deviceGate(req, res, next) {
-  const id = (req.body && req.body.device_id) || '';
-  if (!id) return res.status(403).json({ ok: false, error: 'device_id required' });
-  const row = getDevice.get(id);
-  if (!row) return res.status(403).json({ ok: false, error: 'not registered', status: 'UNKNOWN' });
-  if (row.status !== 'APPROVED') return res.status(403).json({ ok: false, error: 'not approved', status: row.status });
-  next();
-}
+// ── STAGES — reference data for the phone's stage picker ──
+const listStages = db.prepare('SELECT code, name FROM stages ORDER BY sort');
+app.get('/stages', (req, res) => res.json({ ok: true, stages: listStages.all() }));
 
-// Real-time write path — one row per scan attempt, success or error.
-// Gated: only approved devices can write.
-app.post('/scan', deviceGate, (req, res) => {
+// ── UPLOAD — the phone resends the *whole day's* rows array on every
+// call (debounced ~1.2s after each scan, plus midnight/manual/retry), so
+// this upserts by scan_id rather than blindly inserting, and additionally
+// writes the CSV to disk as a backup.
+const upsertScan = db.prepare(`
+  INSERT INTO scans (
+    scan_id, date, scanned_at, received_at, device, device_id,
+    batch_sheet, project, floor, part_type, part_name, size, qty, colour,
+    skid, stage, method, flag, matched, raw
+  ) VALUES (
+    @scan_id, @date, @scanned_at, @received_at, @device, @device_id,
+    @batch_sheet, @project, @floor, @part_type, @part_name, @size, @qty, @colour,
+    @skid, @stage, @method, @flag, @matched, @raw
+  )
+  ON CONFLICT(scan_id) DO UPDATE SET
+    skid=@skid, stage=@stage, flag=@flag, matched=@matched
+`);
+
+app.post('/upload', deviceGate, (req, res) => {
   const b = req.body || {};
-  if (!b.scan_id || !b.status) {
-    return res.status(400).json({ ok: false, error: 'scan_id and status are required' });
-  }
-  const row = {
-    scan_id: String(b.scan_id),
-    status: String(b.status),
-    date: String(b.date || ''),
-    scanned_at: String(b.scanned_at || new Date().toISOString()),
-    received_at: new Date().toISOString(),
-    device: b.device || null,
-    part_name: b.part_name || null,
-    batch_sheet: b.batch_sheet || null,
-    project: b.project || null,
-    floor: b.floor || null,
-    part_type: b.part_type || null,
-    size: b.size || null,
-    qty: b.qty || null,
-    colour: b.colour || null,
-    skid: b.skid || null,
-    method: b.method || null,
-    flag: b.flag || null,
-    error_reason: b.error_reason || null,
-    raw: b.raw || null
-  };
-  try {
-    insertScan.run(row);
-  } catch (e) {
-    if (String(e.message).includes('UNIQUE constraint')) {
-      return res.json({ ok: true, duplicate: true }); // retried POST, already stored
+  const { filename, csv, rows } = b;
+  if (!filename || !csv) return res.status(400).json({ ok: false, error: 'filename and csv required' });
+
+  const dir = path.join(__dirname, 'uploads');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, filename.replace(/[^a-zA-Z0-9_.-]/g, '_')), csv, 'utf8');
+
+  if (Array.isArray(rows)) {
+    const received = new Date().toISOString();
+    for (const row of rows) {
+      const scanId = row.scanId || `${b.device_id}_${row.time || received}_${row.partName || ''}`;
+      upsertScan.run({
+        scan_id: String(scanId),
+        date: String(row.date || b.date || ''),
+        scanned_at: String(row.time || received),
+        received_at: received,
+        device: b.device || null,
+        device_id: b.device_id || null,
+        batch_sheet: row.batchSheet || null,
+        project: row.project || null,
+        floor: row.floor || null,
+        part_type: row.partType || null,
+        part_name: row.partName || null,
+        size: row.size || null,
+        qty: row.qty || null,
+        colour: row.colour || null,
+        skid: row.skid || null,
+        stage: row.stage || null,
+        method: row.method || null,
+        flag: row.flag || null,
+        matched: row.matched === true ? 'TRUE' : row.matched === false ? 'FALSE' : '',
+        raw: row.raw || null
+      });
     }
-    return res.status(500).json({ ok: false, error: e.message });
   }
-  res.json({ ok: true, scan_id: row.scan_id });
+  res.json({ ok: true });
 });
 
-// Read path — reporting only, admin-key protected (not a phone-facing route).
+// ── CHECK — cross-device duplicate-completion lookup for a single scan,
+// called live right after each scan (best-effort, not required for the
+// scan to already be saved locally/uploaded).
+const getStage = db.prepare('SELECT code FROM stages WHERE code = ?');
+const getCheck = db.prepare('SELECT * FROM stage_checks WHERE part_name = ? AND stage = ?');
+const insertCheck = db.prepare('INSERT INTO stage_checks (part_name, stage, first_device, first_time) VALUES (?,?,?,?)');
+
+app.post('/check', deviceGate, (req, res) => {
+  const { partName, stage, device } = req.body || {};
+  if (!partName || !stage) return res.status(400).json({ ok: false, error: 'partName and stage required' });
+  if (!getStage.get(stage)) return res.json({ ok: true, status: 'NO_SUCH_STAGE' });
+
+  const key = String(partName).trim().toUpperCase();
+  const existing = getCheck.get(key, stage);
+  if (existing) {
+    return res.json({ ok: true, status: 'MATCHED_ALREADY', completedByDevice: existing.first_device || '' });
+  }
+  insertCheck.run(key, stage, device || '', new Date().toISOString());
+  res.json({ ok: true, status: 'MATCHED_NEW' });
+});
+
+// Reporting only, admin-key protected.
 app.get('/scans', requireAdmin, (req, res) => {
-  const { date, status } = req.query;
+  const { date, device_id } = req.query;
   const limit = Math.min(Number(req.query.limit) || 200, 2000);
   let q = 'SELECT * FROM scans WHERE 1=1';
   const params = [];
   if (date) { q += ' AND date = ?'; params.push(date); }
-  if (status) { q += ' AND status = ?'; params.push(status); }
+  if (device_id) { q += ' AND device_id = ?'; params.push(device_id); }
   q += ' ORDER BY id DESC LIMIT ?'; params.push(limit);
   res.json(db.prepare(q).all(...params));
-});
-
-// Legacy once-a-day CSV upload, kept for backward compatibility with the
-// existing app Settings screen — same device approval gate as /scan.
-app.post('/upload', deviceGate, (req, res) => {
-  const { filename, csv } = req.body || {};
-  if (!filename || !csv) return res.status(400).json({ ok: false, error: 'filename and csv required' });
-  const dir = path.join(__dirname, 'uploads');
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, filename.replace(/[^a-zA-Z0-9_.-]/g, '_')), csv, 'utf8');
-  res.json({ ok: true });
 });
 
 const PORT = process.env.PORT || 8765;
