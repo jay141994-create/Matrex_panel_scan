@@ -502,9 +502,13 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
 */
 
 const PASSWORD='M@trex', DELIM='*';
-const LS={scans:d=>'mx_scans_'+d,cfg:'mx_cfg',lastUp:'mx_lastup',camSize:'mx_camsize'};
+const LS={scans:d=>'mx_scans_'+d,cfg:'mx_cfg',lastUp:'mx_lastup',camSize:'mx_camsize',deviceId:'mx_device_id'};
 
 const $=id=>document.getElementById(id);
+function uuid(){
+  if(window.crypto&&crypto.randomUUID)return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;const v=c==='x'?r:(r&0x3|0x8);return v.toString(16);});
+}
 const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const lsGet=k=>{try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}};
 const lsSet=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
@@ -516,6 +520,9 @@ const fmtT=iso=>iso?new Date(iso).toLocaleTimeString([],{hour:'2-digit',minute:'
 const fmtDT=iso=>iso?new Date(iso).toLocaleDateString([],{month:'short',day:'numeric'})+' '+fmtT(iso):'Never';
 
 let cfg=lsGet(LS.cfg)||{url:'',dev:'MATREX-PHONE'};
+let deviceId=lsGet(LS.deviceId);
+if(!deviceId){deviceId=uuid();lsSet(LS.deviceId,deviceId);}
+let deviceStatus='UNKNOWN'; // UNKNOWN | PENDING | APPROVED | REVOKED
 let scans=[],currentSkid=null,today=todayStr();
 let skidTarget=null,delTarget=null,pendingDup=null;
 let nextMidnightUpload=null,engineLabel='Starting…';
@@ -545,7 +552,7 @@ async function uploadToServer(reason){
   if(!cfg.url||!scans.length||uploading)return false;
   uploading=true;setSyncUI('syncing','Uploading…');
   try{
-    const r=await fetch(cfg.url+'/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:csvName(),csv:buildCSV(),device:cfg.dev,date:today,count:scans.length,reason})});
+    const r=await fetch(cfg.url+'/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:csvName(),csv:buildCSV(),device:cfg.dev,device_id:deviceId,date:today,count:scans.length,reason})});
     if(!r.ok)throw new Error('HTTP '+r.status);
     const ts=new Date().toISOString();lsSet(LS.lastUp,ts);
     setSyncUI('ok','Uploaded '+fmtT(ts));refreshSettings();uploading=false;return true;
@@ -577,6 +584,34 @@ function updateSyncNext(){
 setInterval(updateSyncNext,60000);
 window.addEventListener('online',()=>{if(cfg.url&&scans.length)uploadToServer('reconnect');});
 function setSyncUI(st,msg){$('syncbar').className=st||'';$('syncTxt').textContent=msg||'Saved on phone';}
+
+// ── REAL-TIME SCAN EVENTS — one row per attempt, success or error ──
+// Fire-and-forget: never blocks the scan loop and never touches the
+// local scans[] / CSV path, which stays the source of truth on-phone.
+// If the receiver is unreachable the event is simply dropped here; the
+// daily CSV upload is still the durable backstop for that scan.
+function pushScanEvent(row){
+  if(!cfg.url)return;
+  row.device_id=deviceId;
+  fetch(cfg.url+'/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(row)})
+    .then(r=>{
+      if(r.status===403)return r.json().then(j=>{
+        deviceStatus=j.status||'UNKNOWN';
+        setSyncUI('fail',deviceStatus==='PENDING'?'Waiting for admin approval':'Device not approved — see admin');
+      });
+    })
+    .catch(()=>{});
+}
+
+// Registers this phone with the server (or refreshes last-seen + name if
+// already known). New devices land as PENDING until approved from the
+// admin dashboard — nothing this device sends is accepted until then.
+function registerDevice(){
+  if(!cfg.url)return Promise.resolve('UNKNOWN');
+  return fetch(cfg.url+'/devices/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({device_id:deviceId,device_name:cfg.dev})})
+    .then(r=>r.json()).then(j=>{deviceStatus=j.status||'UNKNOWN';return deviceStatus;})
+    .catch(()=>{deviceStatus='UNKNOWN';return deviceStatus;});
+}
 
 // ── WAKE LOCK ─────────────────────────────────────────────
 let wakeLock=null;
@@ -794,7 +829,7 @@ function parsePayload(raw){
     size:(f[5]||'').trim(),
     qty:(f[6]||'').trim(),
     colour:(f[7]||'').trim(),
-    raw,date:today,time:new Date().toISOString(),method:'SCAN',flag:'',skid:currentSkid||''
+    raw,date:today,time:new Date().toISOString(),method:'SCAN',flag:'',skid:currentSkid||'',scanId:uuid()
   };
 }
 // Duplicate detection compares every identifying field, not just Tag +
@@ -829,11 +864,15 @@ function dataHtml(p){
 function handleRaw(raw,method){
   raw=String(raw).trim();if(!raw)return;
   if(method==='SCAN'&&!isMatrexPayload(raw)){
-    beep('err');showFlash('bad','Not a Matrex part label — barcode ignored.');return;
+    beep('err');showFlash('bad','Not a Matrex part label — barcode ignored.');
+    pushScanEvent({scan_id:uuid(),status:'REJECTED_INVALID',date:today,scanned_at:new Date().toISOString(),device:cfg.dev,method,error_reason:'Not a Matrex part label',raw});
+    return;
   }
   const part=method==='SCAN'?parsePayload(raw):raw;
   if(!part.partName){
-    showFlash('bad','Barcode read but no Part Name found. Check delimiter (*) in data.');return;
+    showFlash('bad','Barcode read but no Part Name found. Check delimiter (*) in data.');
+    pushScanEvent({scan_id:part.scanId||uuid(),status:'REJECTED_NO_NAME',date:today,scanned_at:new Date().toISOString(),device:cfg.dev,method,error_reason:'No part name parsed',raw});
+    return;
   }
   const key=scanKey(part);
   if(scans.some(s=>scanKey(s)===key&&s.flag!=='DUPLICATE')){
@@ -856,6 +895,13 @@ function handleRaw(raw,method){
 function commit(part,flag,note){
   if(flag)part.flag=flag;part.skid=currentSkid||'';
   scans.push(part);saveScans();
+  pushScanEvent({
+    scan_id:part.scanId||uuid(),status:part.flag||(part.method==='MANUAL'?'MANUAL':'SUCCESS'),
+    date:part.date,scanned_at:part.time,device:cfg.dev,
+    part_name:part.partName,batch_sheet:part.batchSheet,project:part.project,floor:part.floor,
+    part_type:part.partType,size:part.size,qty:part.qty,colour:part.colour,skid:part.skid,
+    method:part.method,flag:part.flag||'',error_reason:note||'',raw:part.raw||''
+  });
   beep('ok');updateCounters();renderRecent();
   const base=part.partName+(part.colour?' — '+part.colour:'');
   showFlash(flag==='WRONG_PART'?'bad':'ok',note?base+' ('+note+')':base);
@@ -940,17 +986,26 @@ function refreshSettings(){
 $('bSettings').onclick=()=>{$('setUrl').value=cfg.url;$('setDev').value=cfg.dev;$('connRes').textContent='';refreshSettings();show('scrSettings');};
 $('bBackSettings').onclick=()=>show('scrScan');
 function validUrl(u){return /^https?:\/\/[^\s]+$/i.test(u);}
-$('bSaveSet').onclick=()=>{
+$('bSaveSet').onclick=async()=>{
   const u=$('setUrl').value.trim().replace(/\/+$/,'');
   if(u&&!validUrl(u)){showFlash('bad','Receiver URL must start with http:// or https://');return;}
-  cfg.url=u;cfg.dev=$('setDev').value.trim()||'MATREX-PHONE';lsSet(LS.cfg,cfg);show('scrScan');refreshSettings();showFlash('ok','Settings saved');
+  cfg.url=u;cfg.dev=$('setDev').value.trim()||'MATREX-PHONE';lsSet(LS.cfg,cfg);show('scrScan');refreshSettings();
+  if(u){const st=await registerDevice();showFlash(st==='APPROVED'?'ok':'bad','Settings saved — device '+st.toLowerCase());}
+  else showFlash('ok','Settings saved');
 };
 $('bTestConn').onclick=async()=>{
   const u=$('setUrl').value.trim().replace(/\/+$/,'');
   if(!u){$('connRes').style.color='var(--amber-700)';$('connRes').textContent='Enter a URL first';return;}
   if(!validUrl(u)){$('connRes').style.color='var(--red-600)';$('connRes').textContent='URL must start with http:// or https://';return;}
   $('connRes').style.color='var(--gray-500)';$('connRes').textContent='Testing…';
-  try{const r=await fetch(u+'/health');$('connRes').style.color=r.ok?'var(--green-700)':'var(--amber-700)';$('connRes').textContent=r.ok?'Connected':'HTTP '+r.status;}
+  try{
+    const r=await fetch(u+'/health');
+    if(!r.ok){$('connRes').style.color='var(--amber-700)';$('connRes').textContent='HTTP '+r.status;return;}
+    const st=await registerDevice();
+    const labels={APPROVED:'Connected — device approved ✓',PENDING:'Connected — waiting for admin approval',REVOKED:'Connected — device access revoked',UNKNOWN:'Connected — could not register device'};
+    $('connRes').style.color=st==='APPROVED'?'var(--green-700)':st==='REVOKED'?'var(--red-600)':'var(--amber-700)';
+    $('connRes').textContent=labels[st]||('Connected — '+st);
+  }
   catch(e){$('connRes').style.color='var(--red-600)';$('connRes').textContent='Cannot reach server. Check URL and WiFi.';}
 };
 $('bClear').onclick=()=>{if(!confirm('Clear all of today\'s scans?\n\nDownload or upload the CSV first.'))return;scans=[];currentSkid=null;saveScans();updateCounters();renderRecent();show('scrScan');showFlash('bad','Scans cleared');};
@@ -972,7 +1027,19 @@ $('mScanClose').onclick=()=>modal('mScan',false);
 
 // ── DUPLICATE ────────────────────────────────────────────
 $('mDupAdd').onclick=()=>{modal('mDup',false);if(pendingDup){pendingDup.flag='DUPLICATE';commit(pendingDup);pendingDup=null;}};
-$('mDupSkip').onclick=()=>{modal('mDup',false);pendingDup=null;showFlash('bad','Duplicate skipped');};
+$('mDupSkip').onclick=()=>{
+  modal('mDup',false);
+  if(pendingDup){
+    const p=pendingDup;
+    pushScanEvent({
+      scan_id:p.scanId||uuid(),status:'DUPLICATE_SKIPPED',date:p.date,scanned_at:p.time,device:cfg.dev,
+      part_name:p.partName,batch_sheet:p.batchSheet,project:p.project,floor:p.floor,part_type:p.partType,
+      size:p.size,qty:p.qty,colour:p.colour,skid:currentSkid||'',method:p.method,flag:'',
+      error_reason:'Duplicate skipped by operator',raw:p.raw||''
+    });
+  }
+  pendingDup=null;showFlash('bad','Duplicate skipped');
+};
 
 // ── MANUAL ENTRY ───────────────────────────────────────────
 $('bManual').onclick=()=>{['manName','manProj','manFloor','manType','manSize','manQty','manCol'].forEach(id=>$(id).value='');modal('mManual',true);$('manName').focus();};
@@ -981,7 +1048,7 @@ $('manOk').onclick=()=>{
   const name=$('manName').value.trim().toUpperCase();
   if(!name){$('manName').focus();alert('Part Name is required.');return;}
   modal('mManual',false);
-  const part={batchSheet:'',project:$('manProj').value.trim().toUpperCase(),floor:$('manFloor').value.trim().toUpperCase(),partType:$('manType').value.trim().toUpperCase(),partName:name,size:$('manSize').value.trim().toUpperCase(),qty:$('manQty').value.trim(),colour:$('manCol').value.trim().toUpperCase(),raw:'',date:today,time:new Date().toISOString(),method:'MANUAL',flag:'',skid:currentSkid||''};
+  const part={batchSheet:'',project:$('manProj').value.trim().toUpperCase(),floor:$('manFloor').value.trim().toUpperCase(),partType:$('manType').value.trim().toUpperCase(),partName:name,size:$('manSize').value.trim().toUpperCase(),qty:$('manQty').value.trim(),colour:$('manCol').value.trim().toUpperCase(),raw:'',date:today,time:new Date().toISOString(),method:'MANUAL',flag:'',skid:currentSkid||'',scanId:uuid()};
   const key=scanKey(part);
   if(scans.some(s=>scanKey(s)===key&&s.flag!=='DUPLICATE')){pendingDup=part;$('mDupData').innerHTML=dataHtml(part);modal('mDup',true);return;}
   commit(part);
@@ -1034,6 +1101,7 @@ function beep(k){
 
 // ── BOOT ───────────────────────────────────────────────────
 loadScans();renderAll();scheduleMidnightUpload();checkAuth();
+if(cfg.url)registerDevice();
 </script>
 </body>
 </html>

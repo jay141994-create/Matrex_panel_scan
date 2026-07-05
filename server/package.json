@@ -1,0 +1,16 @@
+{
+  "name": "matrex-scan-server",
+  "version": "1.0.0",
+  "description": "Real-time scan receiver for Matrex Panel Scan — SQLite (node:sqlite) now, portable to company DB later.",
+  "main": "server.js",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2"
+  }
+}
