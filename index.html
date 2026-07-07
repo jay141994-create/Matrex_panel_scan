@@ -904,33 +904,31 @@ function stopScanner(){
 }
 
 // ── PARSE PAYLOAD ─────────────────────────────────────────
-// A genuine Matrex label carries Programme/Sheet Number, Project, Floor,
-// Type, Tag, Dimension and Qty (7 required '*'-delimited fields, in the
-// same field positions parsePayload reads below) — Colour is optional
-// and may be blank or omitted entirely, so the field count can be 7 or 8.
-// Anything short of the 7 required fields (a QR code to a website,
-// another vendor's carton barcode, a badge, a partial/misread decode) is
-// rejected here rather than silently becoming a scan with garbage or
-// missing fields.
-const REQUIRED_FIELDS=7, MAX_FIELDS=8, MAX_RAW_LEN=500;
-function isMatrexPayload(raw){
-  if(raw.length>MAX_RAW_LEN)return false;
-  const f=raw.split(DELIM);
-  if(f.length<REQUIRED_FIELDS||f.length>MAX_FIELDS)return false;
-  for(let i=0;i<REQUIRED_FIELDS;i++){if(!(f[i]||'').trim())return false;}
-  return true;
-}
+// Barcodes are now a bare 10-character unique ID generated in-house — no
+// format/field validation against them, unlike the old '*'-delimited
+// Matrex label spec. If a '*'-delimited payload is scanned anyway (old
+// labels still in circulation), it's still parsed into the legacy
+// field layout below for backward compatibility; anything else is
+// treated as a single opaque identifier in partName. Other fields
+// (project/floor/type/size/qty/colour) stay blank until the rest of the
+// requirements are defined.
 function parsePayload(raw){
   const f=raw.split(DELIM);
+  if(f.length>1){
+    return{
+      batchSheet:(f[0]||'').trim(),
+      project:(f[1]||'').trim(),
+      floor:(f[2]||'').trim(),
+      partType:(f[3]||'').trim(),
+      partName:(f[4]||'').trim(),
+      size:(f[5]||'').trim(),
+      qty:(f[6]||'').trim(),
+      colour:(f[7]||'').trim(),
+      raw,date:today,time:new Date().toISOString(),method:'SCAN',flag:'',skid:currentSkid||'',scanId:uuid()
+    };
+  }
   return{
-    batchSheet:(f[0]||'').trim(),
-    project:(f[1]||'').trim(),
-    floor:(f[2]||'').trim(),
-    partType:(f[3]||'').trim(),
-    partName:(f[4]||'').trim(),
-    size:(f[5]||'').trim(),
-    qty:(f[6]||'').trim(),
-    colour:(f[7]||'').trim(),
+    batchSheet:'',project:'',floor:'',partType:'',partName:raw.trim(),size:'',qty:'',colour:'',
     raw,date:today,time:new Date().toISOString(),method:'SCAN',flag:'',skid:currentSkid||'',scanId:uuid()
   };
 }
@@ -965,12 +963,9 @@ function dataHtml(p){
 // adding a duplicate.
 function handleRaw(raw,method){
   raw=String(raw).trim();if(!raw)return;
-  if(method==='SCAN'&&!isMatrexPayload(raw)){
-    beep('err');showFlash('bad','Not a Matrex part label — barcode ignored.');return;
-  }
   const part=method==='SCAN'?parsePayload(raw):raw;
   if(!part.partName){
-    showFlash('bad','Barcode read but no Part Name found. Check delimiter (*) in data.');return;
+    showFlash('bad','Barcode read but empty.');return;
   }
   const key=scanKey(part);
   if(scans.some(s=>scanKey(s)===key&&s.flag!=='DUPLICATE')){
