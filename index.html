@@ -904,14 +904,14 @@ function stopScanner(){
 }
 
 // ── PARSE PAYLOAD ─────────────────────────────────────────
-// Barcodes are now a bare 10-character unique ID generated in-house — no
-// format/field validation against them, unlike the old '*'-delimited
-// Matrex label spec. If a '*'-delimited payload is scanned anyway (old
-// labels still in circulation), it's still parsed into the legacy
-// field layout below for backward compatibility; anything else is
-// treated as a single opaque identifier in partName. Other fields
-// (project/floor/type/size/qty/colour) stay blank until the rest of the
-// requirements are defined.
+// Barcodes are now a bare 10-character unique ID generated in-house.
+// handleRaw() below rejects anything that isn't exactly ID_LEN characters
+// before this is ever called, so a scanned code always becomes the whole
+// partName here. The old '*'-delimited multi-field branch is kept only
+// for the rare 10-character string that happens to contain a delimiter;
+// otherwise it's effectively dead until the rest of the label spec is
+// redefined. Other fields (project/floor/type/size/qty/colour) stay
+// blank until then.
 function parsePayload(raw){
   const f=raw.split(DELIM);
   if(f.length>1){
@@ -961,8 +961,12 @@ function dataHtml(p){
 // costing a tap. The real uniqueness gate - has THIS exact part already
 // been scanned today - is untouched below and still confirms before
 // adding a duplicate.
+const ID_LEN=10;
 function handleRaw(raw,method){
   raw=String(raw).trim();if(!raw)return;
+  if(method==='SCAN'&&raw.length!==ID_LEN){
+    beep('err');showFlash('bad','Not a Matrex code — barcode ignored.');return;
+  }
   const part=method==='SCAN'?parsePayload(raw):raw;
   if(!part.partName){
     showFlash('bad','Barcode read but empty.');return;
