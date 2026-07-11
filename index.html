@@ -556,9 +556,10 @@ let cfg=lsGet(LS.cfg)||{url:'',dev:'MATREX-PHONE',filePrefix:'Matrex_Scans',apiK
 let deviceId=lsGet(LS.deviceId);
 if(!deviceId){deviceId=uuid();lsSet(LS.deviceId,deviceId);}
 let deviceStatus='UNKNOWN'; // UNKNOWN | PENDING | APPROVED | REVOKED
-function registerDevice(){
-  if(!cfg.url)return Promise.resolve('UNKNOWN');
-  return fetch(cfg.url+'/devices/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({device_id:deviceId,device_name:cfg.dev})})
+function registerDevice(url){
+  const target=url||cfg.url;
+  if(!target)return Promise.resolve('UNKNOWN');
+  return fetch(target+'/devices/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({device_id:deviceId,device_name:cfg.dev})})
     .then(r=>r.json()).then(j=>{deviceStatus=j.status||'UNKNOWN';return deviceStatus;})
     .catch(()=>{deviceStatus='UNKNOWN';return deviceStatus;});
 }
@@ -1128,7 +1129,7 @@ $('bTestConn').onclick=async()=>{
   try{
     const r=await fetch(u+'/health');
     if(!r.ok){$('connRes').style.color='var(--amber-700)';$('connRes').textContent='HTTP '+r.status;return;}
-    const st=await registerDevice();
+    const st=await registerDevice(u);
     const labels={APPROVED:'Connected — device approved ✓',PENDING:'Connected — waiting for admin approval',REVOKED:'Connected — device access revoked',UNKNOWN:'Connected — could not register device'};
     $('connRes').style.color=st==='APPROVED'?'var(--green-700)':st==='REVOKED'?'var(--red-600)':'var(--amber-700)';
     $('connRes').textContent=labels[st]||('Connected — '+st);
