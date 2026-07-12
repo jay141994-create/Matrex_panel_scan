@@ -30,7 +30,7 @@ while ($true) {
     $healthy = Test-TunnelHealthy $url
 
     if ($healthy) {
-        Set-Content -Path $currentUrlFile -Value $url -Encoding utf8
+        Set-Content -Path $currentUrlFile -Value $url -Encoding ascii -NoNewline
     } else {
         # Kill whatever cloudflared is running (dead or not) and start fresh.
         Get-CimInstance Win32_Process -Filter "Name='cloudflared.exe'" | ForEach-Object {
@@ -41,7 +41,7 @@ while ($true) {
         wscript.exe "$serverDir\start-tunnel-hidden.vbs"
         Start-Sleep -Seconds 8
         $newUrl = Get-LatestTunnelUrl
-        if ($newUrl) { Set-Content -Path $currentUrlFile -Value $newUrl -Encoding utf8 }
+        if ($newUrl) { Set-Content -Path $currentUrlFile -Value $newUrl -Encoding ascii -NoNewline }
     }
 
     Start-Sleep -Seconds 120
