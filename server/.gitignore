@@ -4,3 +4,4 @@ uploads/
 certs/
 bin/
 *.log
+current-tunnel-url.txt

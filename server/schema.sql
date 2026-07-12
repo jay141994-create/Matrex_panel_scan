@@ -43,3 +43,40 @@ CREATE VIEW IF NOT EXISTS v_daily_summary AS
   SELECT date, flag, COUNT(*) AS cnt
   FROM scans
   GROUP BY date, flag;
+
+-- ── PARTS REGISTRY (pre-registered labels, checked at scan time) ──────
+-- Two-table split so future departments (Windows, etc.) get their own
+-- detail table with a totally different structure, without ever having
+-- to touch this one. parts_index is the *only* place status/void/notes
+-- live — department detail tables are pure write-once reference data
+-- from Excel, never mutated after registration.
+CREATE TABLE IF NOT EXISTS parts_index (
+  unique_id      TEXT PRIMARY KEY,     -- the 10-char ID encoded in the QR
+  department     TEXT NOT NULL,        -- 'PANEL' today; 'WINDOWS' etc. later
+  scanned        TEXT NOT NULL DEFAULT 'No',  -- 'Yes' | 'No'
+  void           TEXT NOT NULL DEFAULT 'No',  -- 'Yes' | 'No' — voided/rejected, independent of scanned
+  notes          TEXT,                 -- defects/free-form notes, added later via app or admin
+  created_at     TEXT NOT NULL,        -- when Excel registered this label
+  scanned_at     TEXT,
+  scanned_by_device TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_parts_index_department ON parts_index(department);
+
+-- Panel department detail table — one row per unique_id, written once by
+-- the Excel macro at label-registration time. Column names mirror the
+-- macro's LABEL LIST sheet exactly (Sheet Name, Tag, Width, Height, etc.)
+-- so the register endpoint can accept that data with zero translation.
+CREATE TABLE IF NOT EXISTS parts_panel (
+  unique_id     TEXT PRIMARY KEY REFERENCES parts_index(unique_id),
+  batch         TEXT,
+  sheet_name    TEXT,
+  project       TEXT,
+  floor         TEXT,
+  tag           TEXT,
+  part_type     TEXT,
+  width         TEXT,
+  height        TEXT,
+  qty           TEXT,
+  colour        TEXT,
+  generated_on  TEXT
+);

@@ -17,6 +17,21 @@ if (fs.existsSync(ADMIN_KEY_PATH)) {
   console.log('Generated new admin key — see server/data/admin-key.txt');
 }
 
+// ── INGEST KEY — separate from the admin key, scoped only to registering
+// new parts (used by the Excel macro, not by people). If this ever leaks
+// out of a shared workbook, the blast radius is "someone can register
+// fake labels," not admin access or scan data.
+const INGEST_KEY_PATH = path.join(__dirname, 'data', 'ingest-key.txt');
+let INGEST_KEY;
+if (fs.existsSync(INGEST_KEY_PATH)) {
+  INGEST_KEY = fs.readFileSync(INGEST_KEY_PATH, 'utf8').trim();
+} else {
+  INGEST_KEY = require('crypto').randomBytes(24).toString('hex');
+  fs.mkdirSync(path.dirname(INGEST_KEY_PATH), { recursive: true });
+  fs.writeFileSync(INGEST_KEY_PATH, INGEST_KEY, 'utf8');
+  console.log('Generated new ingest key — see server/data/ingest-key.txt');
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '5mb' })); // /upload carries the whole day's rows
@@ -24,6 +39,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 function requireAdmin(req, res, next) {
   if (req.get('X-Admin-Key') !== ADMIN_KEY) return res.status(401).json({ ok: false, error: 'bad admin key' });
+  next();
+}
+function requireIngest(req, res, next) {
+  if (req.get('X-Ingest-Key') !== INGEST_KEY) return res.status(401).json({ ok: false, error: 'bad ingest key' });
   next();
 }
 
@@ -136,6 +155,62 @@ app.get('/scans', requireAdmin, (req, res) => {
   if (device_id) { q += ' AND device_id = ?'; params.push(device_id); }
   q += ' ORDER BY id DESC LIMIT ?'; params.push(limit);
   res.json(db.prepare(q).all(...params));
+});
+
+// ── PANEL PARTS REGISTRY — Excel calls this once per label batch, right
+// after it generates UIDs locally and writes its own LABEL LIST/CSV/TSV.
+// Idempotent per unique_id: safe to resend the same batch if the network
+// drops mid-request, since already-registered IDs are just skipped, not
+// duplicated or overwritten.
+const insertPartsIndex = db.prepare(`
+  INSERT INTO parts_index (unique_id, department, scanned, void, created_at)
+  VALUES (@unique_id, 'PANEL', 'No', 'No', @now)
+  ON CONFLICT(unique_id) DO NOTHING
+`);
+const insertPartsPanel = db.prepare(`
+  INSERT INTO parts_panel (unique_id, batch, sheet_name, project, floor, tag, part_type, width, height, qty, colour, generated_on)
+  VALUES (@unique_id, @batch, @sheet_name, @project, @floor, @tag, @part_type, @width, @height, @qty, @colour, @generated_on)
+  ON CONFLICT(unique_id) DO NOTHING
+`);
+const getPartsIndexRow = db.prepare('SELECT unique_id FROM parts_index WHERE unique_id = ?');
+
+app.post('/parts/panel/register', requireIngest, (req, res) => {
+  const { batch, rows } = req.body || {};
+  if (!Array.isArray(rows) || !rows.length) return res.status(400).json({ ok: false, error: 'rows array required' });
+
+  const now = new Date().toISOString();
+  let inserted = 0, alreadyExisted = 0, skipped = 0;
+
+  db.exec('BEGIN');
+  try {
+    for (const row of rows) {
+      const uid = String(row.unique_id || '').trim();
+      if (!uid || uid.length > 50) { skipped++; continue; }
+      const existed = !!getPartsIndexRow.get(uid);
+      insertPartsIndex.run({ unique_id: uid, now });
+      insertPartsPanel.run({
+        unique_id: uid,
+        batch: row.batch || batch || null,
+        sheet_name: row.sheet_name || null,
+        project: row.project || null,
+        floor: row.floor || null,
+        tag: row.tag || null,
+        part_type: row.part_type || null,
+        width: row.width || null,
+        height: row.height || null,
+        qty: row.qty || null,
+        colour: row.colour || null,
+        generated_on: row.generated_on || null
+      });
+      if (existed) alreadyExisted++; else inserted++;
+    }
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+
+  res.json({ ok: true, inserted, already_existed: alreadyExisted, skipped, total: rows.length });
 });
 
 const PORT = process.env.PORT || 8765;
