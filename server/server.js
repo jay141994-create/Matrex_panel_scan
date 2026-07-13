@@ -95,16 +95,16 @@ app.post('/admin/api/devices/:id/revoke', requireAdmin, (req, res) => {
 // writes the CSV to disk as a backup.
 const upsertScan = db.prepare(`
   INSERT INTO scans (
-    scan_id, date, scanned_at, received_at, device, device_id,
+    scan_id, date, scanned_at, received_at, device, device_id, unique_id, match_status,
     batch_sheet, project, floor, part_type, part_name, size, qty, colour,
     skid, method, flag, raw
   ) VALUES (
-    @scan_id, @date, @scanned_at, @received_at, @device, @device_id,
+    @scan_id, @date, @scanned_at, @received_at, @device, @device_id, @unique_id, @match_status,
     @batch_sheet, @project, @floor, @part_type, @part_name, @size, @qty, @colour,
     @skid, @method, @flag, @raw
   )
   ON CONFLICT(scan_id) DO UPDATE SET
-    skid=@skid, flag=@flag
+    skid=@skid, flag=@flag, match_status=@match_status
 `);
 
 app.post('/upload', deviceGate, (req, res) => {
@@ -127,6 +127,8 @@ app.post('/upload', deviceGate, (req, res) => {
         received_at: received,
         device: b.device || null,
         device_id: b.device_id || null,
+        unique_id: row.uniqueId || null,
+        match_status: row.matchStatus || null,
         batch_sheet: row.batchSheet || null,
         project: row.project || null,
         floor: row.floor || null,
@@ -211,6 +213,48 @@ app.post('/parts/panel/register', requireIngest, (req, res) => {
   }
 
   res.json({ ok: true, inserted, already_existed: alreadyExisted, skipped, total: rows.length });
+});
+
+// ── SCAN-TIME MATCH — the phone calls this for every scanned ID, live.
+// parts_index is checked first (universal, fast); only if a match exists
+// there do we join into that department's detail table. Adding a new
+// department later means adding one more case here — parts_index and
+// this endpoint's shape never change.
+const getMatchIndex = db.prepare('SELECT * FROM parts_index WHERE unique_id = ?');
+const getMatchPanel = db.prepare('SELECT * FROM parts_panel WHERE unique_id = ?');
+const markScanned = db.prepare(`
+  UPDATE parts_index SET scanned='Yes', scanned_at=@now, scanned_by_device=@device_id
+  WHERE unique_id=@unique_id
+`);
+
+app.post('/parts/match', deviceGate, (req, res) => {
+  const { unique_id, device_id, device } = req.body || {};
+  const uid = String(unique_id || '').trim();
+  if (!uid) return res.status(400).json({ ok: false, error: 'unique_id required' });
+
+  const idx = getMatchIndex.get(uid);
+  if (!idx) return res.json({ ok: true, status: 'NOT_FOUND' });
+
+  let detail = null;
+  if (idx.department === 'PANEL') detail = getMatchPanel.get(uid);
+  // future departments: else if (idx.department === 'WINDOWS') detail = getMatchWindows.get(uid);
+
+  const fields = detail || {};
+
+  if (idx.void === 'Yes') {
+    return res.json({ ok: true, status: 'VOIDED', ...fields, notes: idx.notes || '' });
+  }
+
+  if (idx.scanned === 'Yes') {
+    return res.json({
+      ok: true, status: 'MATCHED_ALREADY', ...fields,
+      scanned_at: idx.scanned_at, scanned_by_device: idx.scanned_by_device, notes: idx.notes || ''
+    });
+  }
+
+  const now = new Date().toISOString();
+  markScanned.run({ now, device_id: device_id || null, unique_id: uid });
+  res.json({ ok: true, status: 'MATCHED_NEW', ...fields, scanned_at: now, scanned_by_device: device_id || '', notes: idx.notes || '' });
 });
 
 const PORT = process.env.PORT || 8765;

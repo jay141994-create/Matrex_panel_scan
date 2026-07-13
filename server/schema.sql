@@ -6,6 +6,8 @@ CREATE TABLE IF NOT EXISTS scans (
   received_at   TEXT NOT NULL,
   device        TEXT,
   device_id     TEXT,
+  unique_id     TEXT,  -- the scanned parts-registry ID, if this was a SCAN (blank for MANUAL)
+  match_status  TEXT,  -- MATCHED_NEW | MATCHED_ALREADY | VOIDED | NOT_FOUND | UNVERIFIED | '' (MANUAL)
   batch_sheet   TEXT,
   project       TEXT,
   floor         TEXT,

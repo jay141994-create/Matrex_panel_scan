@@ -149,7 +149,9 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
 .srow:last-child{border-bottom:0}
 .s-dot2{width:8px;height:8px;border-radius:50%;background:var(--blue-600);flex-shrink:0}
 .srow.is-dup .s-dot2{background:var(--red-600)}
-.srow.is-wrong .s-dot2{background:var(--amber-700)}
+.srow.is-void .s-dot2{background:var(--red-600)}
+.srow.is-unknown .s-dot2{background:var(--amber-700)}
+.srow.is-unverified .s-dot2{background:var(--gray-300)}
 .srow.is-manual .s-dot2{background:var(--gray-500)}
 .srow-info{flex:1;min-width:0}
 .srow-name{font-size:16px;font-weight:700;color:var(--gray-900);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -212,7 +214,7 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
 .fl-row:last-child{border-bottom:0}
 .fl-num{font-size:12px;font-weight:700;color:var(--gray-300);min-width:26px;text-align:right;flex-shrink:0}
 .fl-dot{width:8px;height:8px;border-radius:50%;background:var(--blue-600);flex-shrink:0}
-.fl-dot.dup{background:var(--red-600)}.fl-dot.wrong{background:var(--amber-700)}.fl-dot.manual{background:var(--gray-500)}
+.fl-dot.dup{background:var(--red-600)}.fl-dot.void{background:var(--red-600)}.fl-dot.unknown{background:var(--amber-700)}.fl-dot.unverified{background:var(--gray-300)}.fl-dot.manual{background:var(--gray-500)}
 .fl-info{flex:1;min-width:0}
 .fl-name{font-size:16px;font-weight:700;color:var(--gray-900)}
 .fl-sub{font-size:13px;color:var(--gray-500);margin-top:2px}
@@ -222,7 +224,7 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
 .fl-btn.dl:hover{color:var(--red-600);background:var(--red-50)}
 .skid-hdr{background:var(--blue-50);padding:8px 16px;font-size:12px;font-weight:800;color:var(--blue-700);text-transform:uppercase;letter-spacing:1.2px}
 .flag-pill{display:inline-block;border-radius:var(--pill);font-size:11px;font-weight:800;padding:2px 7px;margin-left:5px;letter-spacing:.4px}
-.fp-dup{background:var(--red-50);color:var(--red-600)}.fp-wrong{background:var(--amber-50);color:var(--amber-700)}
+.fp-dup{background:var(--red-50);color:var(--red-600)}.fp-void{background:var(--red-50);color:var(--red-600)}.fp-unknown{background:var(--amber-50);color:var(--amber-700)}.fp-unverified{background:var(--gray-100);color:var(--gray-500)}
 
 /* SETTINGS */
 .s-page{padding:16px;max-width:480px;margin:0 auto}
@@ -533,7 +535,7 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
   carried over unchanged in behavior.
 */
 
-const PASSWORD='M@trex', DELIM='*';
+const PASSWORD='M@trex';
 const LS={scans:d=>'mx_scans_'+d,cfg:'mx_cfg',lastUp:'mx_lastup',camSize:'mx_camsize',login:'mx_login',synced:d=>'mx_synced_'+d,deviceId:'mx_device_id'};
 const LOGIN_TTL_MS=30*24*60*60*1000; // stay signed in for 30 days on this phone
 
@@ -596,13 +598,13 @@ function fmtDateNice(d){
 function pendingCount(){return cfg.url?Math.max(0,scans.length-syncedCount):0;}
 
 function buildCSVRows(list){
-  const h=['DATE','SCAN_TIME','BATCH_SHEET','PROJECT','FLOOR','PART_TYPE','PART_NAME','SIZE','QTY_REQUIRED','COLOUR','SKID','METHOD','FLAG','DEVICE'];
+  const h=['DATE','SCAN_TIME','UID','MATCH_STATUS','BATCH_SHEET','PROJECT','FLOOR','PART_TYPE','PART_NAME','SIZE','QTY_REQUIRED','COLOUR','SKID','METHOD','FLAG','DEVICE'];
   const q=v=>{
     v=String(v==null?'':v);
     if(/^[=+\-@\t\r]/.test(v))v="'"+v; // neutralize CSV/formula injection when opened in Excel/Sheets
     return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;
   };
-  return[h.join(','),...list.map(s=>[s.date,s.time,s.batchSheet,s.project,s.floor,s.partType,s.partName,s.size,s.qty,s.colour,s.skid||'',s.method,s.flag||'',cfg.dev].map(q).join(','))].join('\r\n');
+  return[h.join(','),...list.map(s=>[s.date,s.time,s.uniqueId||'',s.matchStatus||'',s.batchSheet,s.project,s.floor,s.partType,s.partName,s.size,s.qty,s.colour,s.skid||'',s.method,s.flag||'',cfg.dev].map(q).join(','))].join('\r\n');
 }
 const buildCSV=()=>buildCSVRows(scans);
 const csvName=(d)=>(cfg.filePrefix||'Matrex_Scans')+'_'+(d||today)+'.csv';
@@ -691,7 +693,7 @@ function updateSyncNext(){
   $('syncNext').textContent=h>1?'~'+h+'h':'soon';
 }
 setInterval(updateSyncNext,60000);
-window.addEventListener('online',()=>{if(cfg.url&&scans.length)uploadToServer('reconnect');});
+window.addEventListener('online',()=>{if(cfg.url&&scans.length){uploadToServer('reconnect');reconcileUnverified();}});
 function setSyncUI(st,msg){
   $('syncbar').className=st||'';
   const p=pendingCount();
@@ -707,8 +709,8 @@ function setSyncUI(st,msg){
 // scans that piled up while offline.
 if(typeof Capacitor!=='undefined'&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform()){
   const{Network,App}=Capacitor.Plugins||{};
-  if(Network)Network.addListener('networkStatusChange',status=>{if(status.connected&&cfg.url&&scans.length)uploadToServer('native-reconnect');});
-  if(App)App.addListener('appStateChange',state=>{if(state.isActive&&cfg.url&&scans.length)uploadToServer('app-resume');});
+  if(Network)Network.addListener('networkStatusChange',status=>{if(status.connected&&cfg.url&&scans.length){uploadToServer('native-reconnect');reconcileUnverified();}});
+  if(App)App.addListener('appStateChange',state=>{if(state.isActive&&cfg.url&&scans.length){uploadToServer('app-resume');reconcileUnverified();}});
 }
 
 // ── WAKE LOCK ─────────────────────────────────────────────
@@ -904,98 +906,132 @@ function stopScanner(){
   trackRef=null;torchOn=false;
 }
 
-// ── PARSE PAYLOAD ─────────────────────────────────────────
-// Barcodes are now a bare 10-character unique ID generated in-house.
-// handleRaw() below rejects anything that isn't exactly ID_LEN characters
-// before this is ever called, so a scanned code always becomes the whole
-// partName here. The old '*'-delimited multi-field branch is kept only
-// for the rare 10-character string that happens to contain a delimiter;
-// otherwise it's effectively dead until the rest of the label spec is
-// redefined. Other fields (project/floor/type/size/qty/colour) stay
-// blank until then.
-function parsePayload(raw){
-  const f=raw.split(DELIM);
-  if(f.length>1){
-    return{
-      batchSheet:(f[0]||'').trim(),
-      project:(f[1]||'').trim(),
-      floor:(f[2]||'').trim(),
-      partType:(f[3]||'').trim(),
-      partName:(f[4]||'').trim(),
-      size:(f[5]||'').trim(),
-      qty:(f[6]||'').trim(),
-      colour:(f[7]||'').trim(),
-      raw,date:today,time:new Date().toISOString(),method:'SCAN',flag:'',skid:currentSkid||'',scanId:uuid()
-    };
-  }
-  return{
-    batchSheet:'',project:'',floor:'',partType:'',partName:raw.trim(),size:'',qty:'',colour:'',
-    raw,date:today,time:new Date().toISOString(),method:'SCAN',flag:'',skid:currentSkid||'',scanId:uuid()
-  };
-}
-// Duplicate detection compares every identifying field, not just Tag +
-// Programme/Sheet Number — two scans only count as the same part if the
-// whole record matches (Colour included), so a real difference in any
-// field is never mistaken for a duplicate.
+// ── DUPLICATE KEY (manual entry only) ──────────────────────
+// SCAN-method duplicates are now resolved authoritatively by the server
+// (the unique ID is the sole identity — see handleScan below). This
+// local multi-field key only still matters for MANUAL entries, which
+// have no ID to verify against.
 function scanKey(p){
   return[p.partName,p.batchSheet,p.project,p.floor,p.partType,p.size,p.qty,p.colour]
     .map(v=>String(v||'').trim().toUpperCase()).join('|');
 }
 // dataHtml shows every field from a scan, in the same order and with
 // the same titles as the verified barcode spec (Programme/Sheet Number
-// * Project * Floor * Type * Tag * Dimension * Qty * Colour) - this is
-// the full set, not a trimmed subset, so nothing scanned is hidden here.
+// * Project * Floor * Type * Tag * Dimension * Qty * Colour), plus the
+// scanned unique ID and its verification result when this was a SCAN.
+const MATCH_LABELS={MATCHED_NEW:'Matched ✓',MATCHED_ALREADY:'Already scanned',VOIDED:'VOIDED',NOT_FOUND:'Not registered',UNVERIFIED:'Unverified — offline'};
 function dataHtml(p){
-  return[['Programme / Sheet Number',p.batchSheet],['Project',p.project],['Floor',p.floor],
+  return[['Unique ID',p.uniqueId],['Match',MATCH_LABELS[p.matchStatus]||''],
+         ['Programme / Sheet Number',p.batchSheet],['Project',p.project],['Floor',p.floor],
          ['Type',p.partType],['Tag',p.partName],['Dimension',p.size],
-         ['Qty',p.qty],['Colour',p.colour]]
+         ['Qty',p.qty],['Colour',p.colour],['Notes',p.notes]]
     .filter(([,v])=>v).map(([k,v])=>`<div class="data-row"><span class="data-k">${esc(k)}</span><span class="data-v">${esc(v)}</span></div>`).join('');
 }
 
 // ── HANDLE RAW SCAN ───────────────────────────────────────
-// Project/Floor (and similar) not matching the previous scan no longer
-// interrupts scanning with a confirmation popup - a worker moving across
-// projects/floors in one session is normal, fast shop-floor behavior,
-// and every scan needs to land for the end-of-day server export. The
-// part is still auto-tagged WRONG_PART so the mismatch stays visible
-// (amber dot in the lists, WRONG pill, FLAG column in the CSV) without
-// costing a tap. The real uniqueness gate - has THIS exact part already
-// been scanned today - is untouched below and still confirms before
-// adding a duplicate.
+// Every scanned code is checked live against the server's parts
+// registry (see matchPart below) before it's committed - this replaces
+// the old "accept whatever gets scanned" behavior with real verification
+// against labels Excel pre-registered. Already-scanned, voided, and
+// unregistered IDs are all flagged (amber/red dot + pill), never
+// blocked with a popup, so a fast-moving operator never loses a beat.
 const ID_LEN=10;
-function handleRaw(raw,method){
+async function handleRaw(raw,method){
   raw=String(raw).trim();if(!raw)return;
-  if(method==='SCAN'&&raw.length!==ID_LEN){
+  if(method!=='SCAN')return; // manual entry is handled entirely by its own modal/button, not here
+  if(raw.length!==ID_LEN){
     beep('err');showFlash('bad','Not a Matrex code — barcode ignored.');return;
   }
-  const part=method==='SCAN'?parsePayload(raw):raw;
-  if(!part.partName){
-    showFlash('bad','Barcode read but empty.');return;
+  await handleScan(raw);
+}
+
+function blankPart(uniqueId){
+  return{
+    uniqueId,raw:uniqueId,batchSheet:'',project:'',floor:'',partType:'',
+    partName:uniqueId,size:'',qty:'',colour:'',notes:'',
+    date:today,time:new Date().toISOString(),method:'SCAN',flag:'',matchStatus:'',
+    skid:currentSkid||'',scanId:uuid()
+  };
+}
+// Applies a /parts/match response onto a part record. NOT_FOUND has no
+// fields to add; MATCHED_NEW/MATCHED_ALREADY/VOIDED all carry the real
+// registered data, so partName becomes the actual Tag instead of the
+// raw ID the moment a match succeeds.
+function applyMatch(part,data){
+  part.matchStatus=data.status||'UNVERIFIED';
+  part.notes=data.notes||'';
+  if(data.status==='NOT_FOUND'){part.flag='NOT_REGISTERED';return;}
+  part.batchSheet=data.sheet_name||'';part.project=data.project||'';part.floor=data.floor||'';
+  part.partType=data.part_type||'';part.partName=data.tag||part.uniqueId;
+  part.size=[data.width,data.height].filter(Boolean).join(' X ');
+  part.qty=data.qty||'';part.colour=data.colour||'';
+  part.flag=data.status==='VOIDED'?'VOID':data.status==='MATCHED_ALREADY'?'DUPLICATE':'';
+}
+async function handleScan(uniqueId){
+  // Local guard against re-adding the identical ID twice in today's list
+  // — only matters when we can't ask the server (phone-only mode or
+  // offline); once online, the server's own MATCHED_ALREADY is the
+  // authoritative answer and this never fires for a second device/day.
+  if((!cfg.url||!navigator.onLine)&&scans.some(s=>s.uniqueId===uniqueId)){
+    beep('err');showFlash('bad','Already scanned today.');return;
   }
-  const key=scanKey(part);
-  if(scans.some(s=>scanKey(s)===key&&s.flag!=='DUPLICATE')){
-    beep('err');pendingDup=part;$('mDupData').innerHTML=dataHtml(part);modal('mDup',true);return;
+
+  const part=blankPart(uniqueId);
+
+  if(!cfg.url){
+    part.flag='UNVERIFIED';part.matchStatus='UNVERIFIED';
+    commit(part);return;
   }
-  if(scans.length>=3&&method==='SCAN'){
-    const ref=scans[scans.length-1];
-    const pM=ref.project&&part.project&&part.project!==ref.project;
-    const fM=ref.floor&&part.floor&&part.floor!==ref.floor;
-    if(pM||fM){
-      const reason=(pM?'project '+ref.project+'→'+part.project:'')+
-        (pM&&fM?', ':'')+(fM?'floor '+ref.floor+'→'+part.floor:'');
-      commit(part,'WRONG_PART',reason);
-      return;
+  if(!navigator.onLine){
+    part.flag='UNVERIFIED';part.matchStatus='UNVERIFIED';
+    commit(part);showFlash('bad','Offline — saved, will verify when back online');return;
+  }
+
+  try{
+    const res=await fetch(cfg.url+'/parts/match',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({unique_id:uniqueId,device_id:deviceId,device:cfg.dev,scanned_at:part.time})});
+    if(res.status===403){
+      const j=await res.json().catch(()=>({}));
+      deviceStatus=j.status||'UNKNOWN';
+      part.flag='UNVERIFIED';part.matchStatus='UNVERIFIED';
+      commit(part);showFlash('bad',deviceStatus==='PENDING'?'Device pending approval — saved locally':'Device not approved — saved locally');return;
     }
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    const data=await res.json();
+    applyMatch(part,data);
+  }catch(e){
+    part.flag='UNVERIFIED';part.matchStatus='UNVERIFIED';
   }
   commit(part);
 }
 
-function commit(part,flag,note){
-  if(flag)part.flag=flag;part.skid=currentSkid||'';
+// ── RECONCILE — once back online, re-check any scans that were saved
+// UNVERIFIED (phone-only mode never reconciles, since there's no server
+// configured at all to check against).
+let reconciling=false;
+async function reconcileUnverified(){
+  if(reconciling||!cfg.url||!navigator.onLine)return;
+  const pending=scans.filter(s=>s.matchStatus==='UNVERIFIED');
+  if(!pending.length)return;
+  reconciling=true;
+  for(const part of pending){
+    try{
+      const res=await fetch(cfg.url+'/parts/match',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({unique_id:part.uniqueId,device_id:deviceId,device:cfg.dev,scanned_at:part.time})});
+      if(!res.ok)continue; // still unreachable/unapproved — leave UNVERIFIED, try again next time
+      const data=await res.json();
+      applyMatch(part,data);
+    }catch(e){/* leave UNVERIFIED, will retry on the next reconnect */}
+  }
+  saveScans();updateCounters();renderRecent();
+  if($('scrList').classList.contains('on'))renderFull($('searchInp').value);
+  reconciling=false;
+}
+
+const FLAG_MSGS={DUPLICATE:'Already scanned',VOID:'VOIDED part',NOT_REGISTERED:'Not registered',UNVERIFIED:'Unverified — offline'};
+function commit(part){
   scans.push(part);saveScans();
-  beep('ok');updateCounters();renderRecent();
+  beep(part.flag?'err':'ok');updateCounters();renderRecent();
   const base=part.partName+(part.colour?' — '+part.colour:'');
-  showFlash(flag==='WRONG_PART'?'bad':'ok',note?base+' ('+note+')':base);
+  showFlash(part.flag?'bad':'ok',FLAG_MSGS[part.flag]?base+' ('+FLAG_MSGS[part.flag]+')':base);
   if(part.method==='SCAN')showScanToast(part.partName);
   if(!cfg.url)setSyncUI('','Saved on phone');else scheduleAutoUpload();
 }
@@ -1028,6 +1064,12 @@ function updateCounters(){
   $('nFlag').textContent=scans.filter(s=>s.flag).length;
   $('nSkid').textContent=currentSkid||'—';
 }
+// Shared flag → CSS class / pill-text mapping, used by both list views.
+const FLAG_CSS={DUPLICATE:'dup',VOID:'void',NOT_REGISTERED:'unknown',UNVERIFIED:'unverified'};
+const FLAG_PILL_TEXT={DUPLICATE:'DUP',VOID:'VOID',NOT_REGISTERED:'UNKNOWN',UNVERIFIED:'PENDING'};
+function flagClass(s){return FLAG_CSS[s.flag]||(s.method==='MANUAL'?'manual':'');}
+function flagPill(s){const t=FLAG_PILL_TEXT[s.flag];return t?`<span class="flag-pill fp-${flagClass(s)}">${t}</span>`:'';}
+
 function renderRecent(){
   const el=$('list');
   if(!scans.length){
@@ -1037,9 +1079,9 @@ function renderRecent(){
   const recent=scans.slice(-6).reverse();
   el.innerHTML=recent.map((s,j)=>{
     const i=scans.length-1-j;
-    const cls=s.flag==='DUPLICATE'?'is-dup':s.flag==='WRONG_PART'?'is-wrong':s.method==='MANUAL'?'is-manual':'';
+    const cls=flagClass(s)?'is-'+flagClass(s):'';
     const sub=[s.batchSheet,s.project,s.floor,s.partType,s.size,s.qty].filter(Boolean).map(esc).join(' · ');
-    return`<div class="srow ${cls}" onclick="openScanDetail(${i})"><div class="s-dot2"></div><div class="srow-info"><div class="srow-name">${esc(s.partName)}${s.colour?' <span style="color:var(--gray-500);font-weight:500">'+esc(s.colour)+'</span>':''}</div>${sub?`<div class="srow-sub">${sub}</div>`:''}</div><div class="srow-time">${fmtT(s.time)}</div></div>`;
+    return`<div class="srow ${cls}" onclick="openScanDetail(${i})"><div class="s-dot2"></div><div class="srow-info"><div class="srow-name">${esc(s.partName)}${s.colour?' <span style="color:var(--gray-500);font-weight:500">'+esc(s.colour)+'</span>':''}${flagPill(s)}</div>${sub?`<div class="srow-sub">${sub}</div>`:''}</div><div class="srow-time">${fmtT(s.time)}</div></div>`;
   }).join('');
 }
 function renderFull(q){
@@ -1056,8 +1098,8 @@ function renderFull(q){
   Object.entries(groups).forEach(([sk,items])=>{
     if(sk!=='__')html+=`<div class="skid-hdr">Skid ${esc(sk)} — ${items.length} part${items.length===1?'':'s'}</div>`;
     items.forEach(({s,i})=>{
-      const dc=s.flag==='DUPLICATE'?'dup':s.flag==='WRONG_PART'?'wrong':s.method==='MANUAL'?'manual':'';
-      const fp=s.flag==='DUPLICATE'?'<span class="flag-pill fp-dup">DUP</span>':s.flag==='WRONG_PART'?'<span class="flag-pill fp-wrong">WRONG</span>':'';
+      const dc=flagClass(s);
+      const fp=flagPill(s);
       const sub=[s.batchSheet,s.project,s.floor,s.partType,s.size,s.qty,s.colour].filter(Boolean).map(esc).join(' · ');
       const acts=editable?`<div class="fl-acts"><button class="fl-btn sk" onclick="event.stopPropagation();openSkidRow(${i})" aria-label="Skid" type="button"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></button><button class="fl-btn dl" onclick="event.stopPropagation();openDel(${i})" aria-label="Remove" type="button"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></div>`:'';
       html+=`<div class="fl-row" onclick="openScanDetail(${i})" style="cursor:pointer"><div class="fl-num">${i+1}</div><div class="fl-dot ${dc}"></div><div class="fl-info"><div class="fl-name">${esc(s.partName)}${fp}</div>${sub?`<div class="fl-sub">${sub} · ${fmtT(s.time)} · ${s.method}</div>`:''}</div>${acts}</div>`;
@@ -1177,7 +1219,7 @@ $('manOk').onclick=()=>{
   const name=$('manName').value.trim().toUpperCase();
   if(!name){$('manName').classList.add('err');$('manNameErr').style.display='block';$('manName').focus();return;}
   modal('mManual',false);
-  const part={batchSheet:'',project:$('manProj').value.trim().toUpperCase(),floor:$('manFloor').value.trim().toUpperCase(),partType:$('manType').value.trim().toUpperCase(),partName:name,size:$('manSize').value.trim().toUpperCase(),qty:$('manQty').value.trim(),colour:$('manCol').value.trim().toUpperCase(),raw:'',date:today,time:new Date().toISOString(),method:'MANUAL',flag:'',skid:currentSkid||'',scanId:uuid()};
+  const part={uniqueId:'',batchSheet:'',project:$('manProj').value.trim().toUpperCase(),floor:$('manFloor').value.trim().toUpperCase(),partType:$('manType').value.trim().toUpperCase(),partName:name,size:$('manSize').value.trim().toUpperCase(),qty:$('manQty').value.trim(),colour:$('manCol').value.trim().toUpperCase(),notes:'',raw:'',date:today,time:new Date().toISOString(),method:'MANUAL',flag:'',matchStatus:'',skid:currentSkid||'',scanId:uuid()};
   const key=scanKey(part);
   if(scans.some(s=>scanKey(s)===key&&s.flag!=='DUPLICATE')){pendingDup=part;$('mDupData').innerHTML=dataHtml(part);modal('mDup',true);return;}
   commit(part);
@@ -1238,7 +1280,7 @@ function beep(k){
 // ── BOOT ───────────────────────────────────────────────────
 loadScans();renderAll();scheduleMidnightUpload();checkAuth();
 if('serviceWorker' in navigator && isSecure())navigator.serviceWorker.register('sw.js').catch(()=>{});
-if(cfg.url)registerDevice();
+if(cfg.url){registerDevice();reconcileUnverified();}
 </script>
 </body>
 </html>
