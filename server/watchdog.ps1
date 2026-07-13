@@ -10,8 +10,15 @@ $currentUrlFile = "$serverDir\current-tunnel-url.txt"
 
 function Get-LatestTunnelUrl {
     if (-not (Test-Path $tunnelLog)) { return $null }
-    $match = Select-String -Path $tunnelLog -Pattern "https://[a-zA-Z0-9-]*\.trycloudflare\.com" -AllMatches | Select-Object -Last 1
-    if ($match) { return $match.Matches[0].Value }
+    # Must match the specific boxed announcement line cloudflared prints on
+    # success (e.g. "... INF |  https://foo.trycloudflare.com          |"),
+    # NOT just any trycloudflare.com substring anywhere in the log — a
+    # failed-to-connect error line can itself contain a URL like
+    # "https://api.trycloudflare.com/tunnel" (Cloudflare's own API
+    # endpoint, mentioned in the error text) which is not an assigned
+    # tunnel and must never be picked up as one.
+    $match = Select-String -Path $tunnelLog -Pattern "INF \|\s+(https://[a-zA-Z0-9-]+\.trycloudflare\.com)\s+\|" -AllMatches | Select-Object -Last 1
+    if ($match) { return $match.Matches[0].Groups[1].Value }
     return $null
 }
 
