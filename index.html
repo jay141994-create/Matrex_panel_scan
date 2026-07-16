@@ -224,7 +224,7 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
 .fl-btn.dl:hover{color:var(--red-600);background:var(--red-50)}
 .skid-hdr{background:var(--blue-50);padding:8px 16px;font-size:12px;font-weight:800;color:var(--blue-700);text-transform:uppercase;letter-spacing:1.2px}
 .flag-pill{display:inline-block;border-radius:var(--pill);font-size:11px;font-weight:800;padding:2px 7px;margin-left:5px;letter-spacing:.4px}
-.fp-dup{background:var(--red-50);color:var(--red-600)}.fp-void{background:var(--red-50);color:var(--red-600)}.fp-unknown{background:var(--amber-50);color:var(--amber-700)}.fp-unverified{background:var(--gray-100);color:var(--gray-500)}
+.fp-dup{background:var(--red-50);color:var(--red-600)}.fp-void{background:var(--red-50);color:var(--red-600)}.fp-unknown{background:var(--amber-50);color:var(--amber-700)}.fp-unverified{background:var(--gray-100);color:var(--gray-500)}.fp-note{background:var(--blue-50);color:var(--blue-600)}
 
 /* SETTINGS */
 .s-page{padding:16px;max-width:480px;margin:0 auto}
@@ -507,7 +507,7 @@ html,body{height:100%;background:var(--bg);color:var(--gray-900);
 
 <div class="mbg" id="mClear"><div class="msheet"><div class="mhandle"></div><div class="m-icon-wrap danger"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FF3B30" stroke-width="2.5" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg></div><div class="m-title">Clear Today's Scans?</div><div class="m-desc">Download or upload the CSV first. This cannot be undone.</div><div class="mbtns"><button class="m-confirm" id="mClearOk" type="button">Clear Scans</button><button class="m-cancel" id="mClearCancel" type="button">Keep Them</button></div></div></div>
 
-<div class="mbg" id="mScan"><div class="msheet"><div class="mhandle"></div><div class="m-icon-wrap info"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0071E3" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></div><div class="m-title">Scan details</div><div class="m-desc">Review the mapped fields from this barcode scan.</div><div class="data-card" id="mScanData"></div><div class="mbtns"><button class="m-ok" id="mScanClose" type="button">Close</button></div></div></div>
+<div class="mbg" id="mScan"><div class="msheet"><div class="mhandle"></div><div class="m-icon-wrap info"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0071E3" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></div><div class="m-title">Scan details</div><div class="m-desc">Review the mapped fields from this barcode scan.</div><div class="data-card" id="mScanData"></div><div class="sec-hdr" style="margin-top:4px"><span class="sec-title">Notes</span></div><div id="notesList" style="margin-bottom:10px"></div><button class="btn btn-outline" id="bAddNote" type="button" style="display:none">+ Add Note</button><div id="addNoteForm" style="display:none"><div class="fg"><label class="fg-label" for="noteCategory">Category</label><select class="fg-input" id="noteCategory"></select></div><div class="fg"><label class="fg-label" for="noteText">Details <span id="noteTextReq" style="display:none;color:var(--red-600)">*</span></label><input class="fg-input" id="noteText" placeholder="Optional details"></div><div class="mbtns"><button class="m-ok" id="noteSubmit" type="button">Add Note</button><button class="m-cancel" id="noteCancel" type="button">Cancel</button></div></div><div class="mbtns" id="mScanCloseWrap"><button class="m-ok" id="mScanClose" type="button">Close</button></div></div></div>
 
 <div class="mbg" id="mSettingsAuth"><div class="msheet"><div class="mhandle"></div><div class="m-icon-wrap info"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0071E3" stroke-width="2.5" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><div class="m-title">Settings Locked</div><div class="m-desc">Enter the settings password to continue.</div><div class="fg"><label class="fg-label" for="setAuthPw">Password</label><div class="f-wrap"><input class="f-input" id="setAuthPw" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Enter password"><button class="f-eye" id="setAuthEye" type="button" aria-label="Show password"><svg id="setAuthEyeIco" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button></div></div><div class="err-box" id="setAuthErr">Incorrect password.</div><div class="mbtns"><button class="m-ok" id="setAuthOk" type="button">Unlock</button><button class="m-cancel" id="setAuthCancel" type="button">Cancel</button></div></div></div>
 
@@ -924,7 +924,7 @@ function dataHtml(p){
   return[['Unique ID',p.uniqueId],['Match',MATCH_LABELS[p.matchStatus]||''],
          ['Programme / Sheet Number',p.batchSheet],['Project',p.project],['Floor',p.floor],
          ['Type',p.partType],['Tag',p.partName],['Dimension',p.size],
-         ['Qty',p.qty],['Colour',p.colour],['Notes',p.notes]]
+         ['Qty',p.qty],['Colour',p.colour]]
     .filter(([,v])=>v).map(([k,v])=>`<div class="data-row"><span class="data-k">${esc(k)}</span><span class="data-v">${esc(v)}</span></div>`).join('');
 }
 
@@ -948,8 +948,8 @@ async function handleRaw(raw,method){
 function blankPart(uniqueId){
   return{
     uniqueId,raw:uniqueId,batchSheet:'',project:'',floor:'',partType:'',
-    partName:uniqueId,size:'',qty:'',colour:'',notes:'',
-    date:today,time:new Date().toISOString(),method:'SCAN',flag:'',matchStatus:'',
+    partName:uniqueId,size:'',qty:'',colour:'',
+    date:today,time:new Date().toISOString(),method:'SCAN',flag:'',matchStatus:'',noteCount:0,
     skid:currentSkid||'',scanId:uuid()
   };
 }
@@ -959,7 +959,7 @@ function blankPart(uniqueId){
 // raw ID the moment a match succeeds.
 function applyMatch(part,data){
   part.matchStatus=data.status||'UNVERIFIED';
-  part.notes=data.notes||'';
+  part.noteCount=data.note_count||0;
   if(data.status==='NOT_FOUND'){part.flag='NOT_REGISTERED';return;}
   part.batchSheet=data.sheet_name||'';part.project=data.project||'';part.floor=data.floor||'';
   part.partType=data.part_type||'';part.partName=data.tag||part.uniqueId;
@@ -1069,6 +1069,10 @@ const FLAG_CSS={DUPLICATE:'dup',VOID:'void',NOT_REGISTERED:'unknown',UNVERIFIED:
 const FLAG_PILL_TEXT={DUPLICATE:'DUP',VOID:'VOID',NOT_REGISTERED:'UNKNOWN',UNVERIFIED:'PENDING'};
 function flagClass(s){return FLAG_CSS[s.flag]||(s.method==='MANUAL'?'manual':'');}
 function flagPill(s){const t=FLAG_PILL_TEXT[s.flag];return t?`<span class="flag-pill fp-${flagClass(s)}">${t}</span>`:'';}
+// Separate from flagPill on purpose — a part can be BOTH e.g. a
+// duplicate AND have a defect note, so both pills show together rather
+// than one replacing the other.
+function notePill(s){return s.noteCount>0?`<span class="flag-pill fp-note">NOTE</span>`:'';}
 
 function renderRecent(){
   const el=$('list');
@@ -1081,7 +1085,7 @@ function renderRecent(){
     const i=scans.length-1-j;
     const cls=flagClass(s)?'is-'+flagClass(s):'';
     const sub=[s.batchSheet,s.project,s.floor,s.partType,s.size,s.qty].filter(Boolean).map(esc).join(' · ');
-    return`<div class="srow ${cls}" onclick="openScanDetail(${i})"><div class="s-dot2"></div><div class="srow-info"><div class="srow-name">${esc(s.partName)}${s.colour?' <span style="color:var(--gray-500);font-weight:500">'+esc(s.colour)+'</span>':''}${flagPill(s)}</div>${sub?`<div class="srow-sub">${sub}</div>`:''}</div><div class="srow-time">${fmtT(s.time)}</div></div>`;
+    return`<div class="srow ${cls}" onclick="openScanDetail(${i})"><div class="s-dot2"></div><div class="srow-info"><div class="srow-name">${esc(s.partName)}${s.colour?' <span style="color:var(--gray-500);font-weight:500">'+esc(s.colour)+'</span>':''}${flagPill(s)}${notePill(s)}</div>${sub?`<div class="srow-sub">${sub}</div>`:''}</div><div class="srow-time">${fmtT(s.time)}</div></div>`;
   }).join('');
 }
 function renderFull(q){
@@ -1099,7 +1103,7 @@ function renderFull(q){
     if(sk!=='__')html+=`<div class="skid-hdr">Skid ${esc(sk)} — ${items.length} part${items.length===1?'':'s'}</div>`;
     items.forEach(({s,i})=>{
       const dc=flagClass(s);
-      const fp=flagPill(s);
+      const fp=flagPill(s)+notePill(s);
       const sub=[s.batchSheet,s.project,s.floor,s.partType,s.size,s.qty,s.colour].filter(Boolean).map(esc).join(' · ');
       const acts=editable?`<div class="fl-acts"><button class="fl-btn sk" onclick="event.stopPropagation();openSkidRow(${i})" aria-label="Skid" type="button"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></button><button class="fl-btn dl" onclick="event.stopPropagation();openDel(${i})" aria-label="Remove" type="button"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></div>`:'';
       html+=`<div class="fl-row" onclick="openScanDetail(${i})" style="cursor:pointer"><div class="fl-num">${i+1}</div><div class="fl-dot ${dc}"></div><div class="fl-info"><div class="fl-name">${esc(s.partName)}${fp}</div>${sub?`<div class="fl-sub">${sub} · ${fmtT(s.time)} · ${s.method}</div>`:''}</div>${acts}</div>`;
@@ -1200,8 +1204,94 @@ window.openDel=i=>{delTarget=i;$('mDelData').innerHTML=dataHtml(scans[i]);modal(
 $('mDelOk').onclick=()=>{if(delTarget!==null){const n=scans[delTarget].partName;scans.splice(delTarget,1);saveScans();updateCounters();renderRecent();renderFull($('searchInp').value);delTarget=null;showFlash('bad',n+' removed');}modal('mDel',false);};
 $('mDelCancel').onclick=()=>modal('mDel',false);
 
-window.openScanDetail=i=>{const list=scansForDate(viewDate);if(typeof list[i]==='undefined')return;$('mScanData').innerHTML=dataHtml(list[i]);modal('mScan',true);};
-$('mScanClose').onclick=()=>modal('mScan',false);
+// ── NOTES / DEFECT LOG ──────────────────────────────────────
+// Dropdown categories mirror the server's NOTE_CATEGORIES exactly — keep
+// these two lists in sync if either changes.
+const NOTE_CATEGORIES=[
+  ['DAMAGE','Damage'],['DEFECT','Defect'],['SCRATCH','Scratch'],['BENT','Bent / Warped'],
+  ['INCORRECT','Incorrect Spec'],['DENT','Dent'],['COLOUR_MISMATCH','Colour Mismatch'],
+  ['MISSING_COMPONENT','Missing Component'],['OTHER','Other (describe below)']
+];
+$('noteCategory').innerHTML=NOTE_CATEGORIES.map(([v,l])=>`<option value="${v}">${esc(l)}</option>`).join('');
+$('noteCategory').addEventListener('change',()=>{
+  $('noteTextReq').style.display=$('noteCategory').value==='OTHER'?'inline':'none';
+});
+
+let noteTarget=null; // the part object currently open in the scan-detail modal
+function noteCanAttach(p){
+  // Notes only make sense once the ID is confirmed to actually exist in
+  // the registry — not for manual entries (no ID at all) or scans that
+  // came back NOT_FOUND/UNVERIFIED (nothing on the server to attach to).
+  return p.uniqueId&&['MATCHED_NEW','MATCHED_ALREADY','VOIDED'].includes(p.matchStatus);
+}
+function renderNotesList(notes){
+  if(!notes||!notes.length){$('notesList').innerHTML='<div style="font-size:13px;color:var(--gray-500)">No notes yet.</div>';return;}
+  const catLabel=Object.fromEntries(NOTE_CATEGORIES);
+  $('notesList').innerHTML=notes.map(n=>`<div class="data-card" style="margin-bottom:6px;padding:10px 12px"><div style="font-weight:700;font-size:13px">${esc(catLabel[n.category]||n.category)}</div>${n.note?`<div style="font-size:13px;color:var(--gray-700);margin-top:2px">${esc(n.note)}</div>`:''}<div style="font-size:11px;color:var(--gray-500);margin-top:4px">${esc(n.device||'')} · ${fmtDT(n.created_at)}</div></div>`).join('');
+}
+window.openScanDetail=async i=>{
+  const list=scansForDate(viewDate);
+  const p=list[i];
+  if(typeof p==='undefined')return;
+  noteTarget=p;
+  $('mScanData').innerHTML=dataHtml(p);
+  $('addNoteForm').style.display='none';$('notesList').style.display='block';
+  $('noteText').value='';$('noteTextReq').style.display='none';
+  modal('mScan',true);
+
+  if(!noteCanAttach(p)){
+    $('notesList').innerHTML='<div style="font-size:13px;color:var(--gray-500)">Notes aren\'t available for unregistered or manual entries.</div>';
+    $('bAddNote').style.display='none';
+    return;
+  }
+  if(!cfg.url||!navigator.onLine){
+    $('notesList').innerHTML='<div style="font-size:13px;color:var(--gray-500)">Notes unavailable — offline.</div>';
+    $('bAddNote').style.display='none';
+    return;
+  }
+  $('bAddNote').style.display='block';
+  $('notesList').innerHTML='<div style="font-size:13px;color:var(--gray-500)">Loading notes…</div>';
+  try{
+    const res=await fetch(cfg.url+'/parts/'+encodeURIComponent(p.uniqueId)+'/notes?device_id='+encodeURIComponent(deviceId));
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    const data=await res.json();
+    if(noteTarget!==p)return; // modal moved on to a different part while this was in flight
+    p.noteCount=(data.notes||[]).length;
+    if(viewDate===today)saveScans();
+    renderNotesList(data.notes);
+  }catch(e){
+    $('notesList').innerHTML='<div style="font-size:13px;color:var(--gray-500)">Could not load notes.</div>';
+  }
+};
+$('bAddNote').onclick=()=>{
+  $('bAddNote').style.display='none';$('notesList').style.display='none';
+  $('addNoteForm').style.display='block';$('noteCategory').value='DAMAGE';$('noteText').value='';$('noteTextReq').style.display='none';
+};
+$('noteCancel').onclick=()=>{
+  $('addNoteForm').style.display='none';$('notesList').style.display='block';$('bAddNote').style.display='block';
+};
+$('noteSubmit').onclick=async()=>{
+  if(!noteTarget)return;
+  const category=$('noteCategory').value;
+  const text=$('noteText').value.trim();
+  if(category==='OTHER'&&!text){$('noteTextReq').style.display='inline';$('noteText').focus();return;}
+  const btn=$('noteSubmit');const old=btn.textContent;btn.textContent='Adding…';btn.disabled=true;
+  try{
+    const res=await fetch(cfg.url+'/parts/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({unique_id:noteTarget.uniqueId,category,note:text,device_id:deviceId,device:cfg.dev})});
+    if(!res.ok){const j=await res.json().catch(()=>({}));throw new Error(j.error||'HTTP '+res.status);}
+    const data=await res.json();
+    noteTarget.noteCount=(data.notes||[]).length;
+    if(viewDate===today)saveScans();
+    renderNotesList(data.notes);
+    $('addNoteForm').style.display='none';$('notesList').style.display='block';$('bAddNote').style.display='block';
+    renderRecent();if($('scrList').classList.contains('on'))renderFull($('searchInp').value);
+    showFlash('ok','Note added');
+  }catch(e){
+    showFlash('bad','Could not add note — '+e.message);
+  }
+  btn.textContent=old;btn.disabled=false;
+};
+$('mScanClose').onclick=()=>{noteTarget=null;modal('mScan',false);};
 
 // ── DUPLICATE ────────────────────────────────────────────
 $('mDupAdd').onclick=()=>{modal('mDup',false);if(pendingDup){pendingDup.flag='DUPLICATE';commit(pendingDup);pendingDup=null;}};
@@ -1219,7 +1309,7 @@ $('manOk').onclick=()=>{
   const name=$('manName').value.trim().toUpperCase();
   if(!name){$('manName').classList.add('err');$('manNameErr').style.display='block';$('manName').focus();return;}
   modal('mManual',false);
-  const part={uniqueId:'',batchSheet:'',project:$('manProj').value.trim().toUpperCase(),floor:$('manFloor').value.trim().toUpperCase(),partType:$('manType').value.trim().toUpperCase(),partName:name,size:$('manSize').value.trim().toUpperCase(),qty:$('manQty').value.trim(),colour:$('manCol').value.trim().toUpperCase(),notes:'',raw:'',date:today,time:new Date().toISOString(),method:'MANUAL',flag:'',matchStatus:'',skid:currentSkid||'',scanId:uuid()};
+  const part={uniqueId:'',batchSheet:'',project:$('manProj').value.trim().toUpperCase(),floor:$('manFloor').value.trim().toUpperCase(),partType:$('manType').value.trim().toUpperCase(),partName:name,size:$('manSize').value.trim().toUpperCase(),qty:$('manQty').value.trim(),colour:$('manCol').value.trim().toUpperCase(),raw:'',date:today,time:new Date().toISOString(),method:'MANUAL',flag:'',matchStatus:'',noteCount:0,skid:currentSkid||'',scanId:uuid()};
   const key=scanKey(part);
   if(scans.some(s=>scanKey(s)===key&&s.flag!=='DUPLICATE')){pendingDup=part;$('mDupData').innerHTML=dataHtml(part);modal('mDup',true);return;}
   commit(part);

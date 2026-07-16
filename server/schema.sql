@@ -49,20 +49,36 @@ CREATE VIEW IF NOT EXISTS v_daily_summary AS
 -- ── PARTS REGISTRY (pre-registered labels, checked at scan time) ──────
 -- Two-table split so future departments (Windows, etc.) get their own
 -- detail table with a totally different structure, without ever having
--- to touch this one. parts_index is the *only* place status/void/notes
--- live — department detail tables are pure write-once reference data
--- from Excel, never mutated after registration.
+-- to touch this one. parts_index is the *only* place status/void live —
+-- department detail tables are pure write-once reference data from
+-- Excel, never mutated after registration.
 CREATE TABLE IF NOT EXISTS parts_index (
   unique_id      TEXT PRIMARY KEY,     -- the 10-char ID encoded in the QR
   department     TEXT NOT NULL,        -- 'PANEL' today; 'WINDOWS' etc. later
   scanned        TEXT NOT NULL DEFAULT 'No',  -- 'Yes' | 'No'
   void           TEXT NOT NULL DEFAULT 'No',  -- 'Yes' | 'No' — voided/rejected, independent of scanned
-  notes          TEXT,                 -- defects/free-form notes, added later via app or admin
+  notes          TEXT,                 -- deprecated, unused — see part_notes below
   created_at     TEXT NOT NULL,        -- when Excel registered this label
   scanned_at     TEXT,
   scanned_by_device TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_parts_index_department ON parts_index(department);
+
+-- Append-only defect/note log — one row per note, never overwritten, so
+-- a history survives even if multiple people flag the same part over
+-- time. category is one of a fixed list (see server.js NOTE_CATEGORIES)
+-- including 'OTHER'; note is optional elaboration text, required when
+-- category is 'OTHER'.
+CREATE TABLE IF NOT EXISTS part_notes (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  unique_id   TEXT NOT NULL REFERENCES parts_index(unique_id),
+  category    TEXT NOT NULL,
+  note        TEXT,
+  device_id   TEXT,
+  device      TEXT,
+  created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_part_notes_unique_id ON part_notes(unique_id);
 
 -- Panel department detail table — one row per unique_id, written once by
 -- the Excel macro at label-registration time. Column names mirror the

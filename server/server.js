@@ -226,6 +226,7 @@ const markScanned = db.prepare(`
   UPDATE parts_index SET scanned='Yes', scanned_at=@now, scanned_by_device=@device_id
   WHERE unique_id=@unique_id
 `);
+const countNotes = db.prepare('SELECT COUNT(*) AS c FROM part_notes WHERE unique_id = ?');
 
 app.post('/parts/match', deviceGate, (req, res) => {
   const { unique_id, device_id, device } = req.body || {};
@@ -240,21 +241,66 @@ app.post('/parts/match', deviceGate, (req, res) => {
   // future departments: else if (idx.department === 'WINDOWS') detail = getMatchWindows.get(uid);
 
   const fields = detail || {};
+  const note_count = countNotes.get(uid).c;
 
   if (idx.void === 'Yes') {
-    return res.json({ ok: true, status: 'VOIDED', ...fields, notes: idx.notes || '' });
+    return res.json({ ok: true, status: 'VOIDED', ...fields, note_count });
   }
 
   if (idx.scanned === 'Yes') {
     return res.json({
       ok: true, status: 'MATCHED_ALREADY', ...fields,
-      scanned_at: idx.scanned_at, scanned_by_device: idx.scanned_by_device, notes: idx.notes || ''
+      scanned_at: idx.scanned_at, scanned_by_device: idx.scanned_by_device, note_count
     });
   }
 
   const now = new Date().toISOString();
   markScanned.run({ now, device_id: device_id || null, unique_id: uid });
-  res.json({ ok: true, status: 'MATCHED_NEW', ...fields, scanned_at: now, scanned_by_device: device_id || '', notes: idx.notes || '' });
+  res.json({ ok: true, status: 'MATCHED_NEW', ...fields, scanned_at: now, scanned_by_device: device_id || '', note_count });
+});
+
+// ── DEFECT / NOTES LOG — append-only, one row per note, never
+// overwritten. Same underlying insert/list logic for both the phone
+// (device-gated) and the admin dashboard (admin-key gated); only the
+// gate differs, matching how every other write in this system is split.
+const NOTE_CATEGORIES = ['DAMAGE', 'DEFECT', 'SCRATCH', 'BENT', 'INCORRECT', 'DENT', 'COLOUR_MISMATCH', 'MISSING_COMPONENT', 'OTHER'];
+const insertNote = db.prepare(`
+  INSERT INTO part_notes (unique_id, category, note, device_id, device, created_at)
+  VALUES (@unique_id, @category, @note, @device_id, @device, @now)
+`);
+const listNotes = db.prepare('SELECT * FROM part_notes WHERE unique_id = ? ORDER BY id DESC');
+
+function addNote(req, res) {
+  const { unique_id, category, note, device_id, device } = req.body || {};
+  const uid = String(unique_id || '').trim();
+  const cat = String(category || '').trim().toUpperCase();
+  if (!uid || !getMatchIndex.get(uid)) return res.status(400).json({ ok: false, error: 'unknown unique_id' });
+  if (!NOTE_CATEGORIES.includes(cat)) return res.status(400).json({ ok: false, error: 'invalid category' });
+  if (cat === 'OTHER' && !String(note || '').trim()) return res.status(400).json({ ok: false, error: 'note text required for OTHER' });
+
+  const now = new Date().toISOString();
+  insertNote.run({ unique_id: uid, category: cat, note: note || null, device_id: device_id || null, device: device || null, now });
+  res.json({ ok: true, notes: listNotes.all(uid) });
+}
+
+app.post('/parts/notes', deviceGate, addNote);
+app.post('/admin/api/parts/notes', requireAdmin, addNote);
+
+app.get('/parts/:id/notes', (req, res) => {
+  // Read-only, low-sensitivity (same data an approved device already
+  // sees embedded in /parts/match) — gated by device_id as a query
+  // param instead of a body, since GET requests carry no body.
+  const row = getDevice.get(req.query.device_id || '');
+  if (!row || row.status !== 'APPROVED') return res.status(403).json({ ok: false, error: 'not approved' });
+  res.json({ ok: true, notes: listNotes.all(req.params.id) });
+});
+
+app.get('/admin/api/parts/:id', requireAdmin, (req, res) => {
+  const uid = req.params.id;
+  const idx = getMatchIndex.get(uid);
+  if (!idx) return res.json({ ok: true, found: false });
+  const detail = idx.department === 'PANEL' ? getMatchPanel.get(uid) : null;
+  res.json({ ok: true, found: true, index: idx, detail, notes: listNotes.all(uid) });
 });
 
 const PORT = process.env.PORT || 8765;
