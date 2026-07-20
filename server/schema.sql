@@ -60,7 +60,9 @@ CREATE TABLE IF NOT EXISTS parts_index (
   notes          TEXT,                 -- deprecated, unused — see part_notes below
   created_at     TEXT NOT NULL,        -- when Excel registered this label
   scanned_at     TEXT,
-  scanned_by_device TEXT
+  scanned_by_device TEXT,
+  voided_at      TEXT,
+  voided_by_device  TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_parts_index_department ON parts_index(department);
 
@@ -68,12 +70,15 @@ CREATE INDEX IF NOT EXISTS idx_parts_index_department ON parts_index(department)
 -- a history survives even if multiple people flag the same part over
 -- time. category is one of a fixed list (see server.js NOTE_CATEGORIES)
 -- including 'OTHER'; note is optional elaboration text, required when
--- category is 'OTHER'.
+-- category is 'OTHER'. action distinguishes a plain note from the
+-- reason logged when a part is voided (same category/text mechanism,
+-- reused rather than building a second form) — 'NOTE' | 'VOID'.
 CREATE TABLE IF NOT EXISTS part_notes (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   unique_id   TEXT NOT NULL REFERENCES parts_index(unique_id),
   category    TEXT NOT NULL,
   note        TEXT,
+  action      TEXT NOT NULL DEFAULT 'NOTE',
   device_id   TEXT,
   device      TEXT,
   created_at  TEXT NOT NULL

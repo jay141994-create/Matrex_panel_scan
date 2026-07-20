@@ -22,5 +22,8 @@ function ensureColumn(table, column, definition) {
 }
 ensureColumn('scans', 'unique_id', 'TEXT');
 ensureColumn('scans', 'match_status', 'TEXT');
+ensureColumn('parts_index', 'voided_at', 'TEXT');
+ensureColumn('parts_index', 'voided_by_device', 'TEXT');
+ensureColumn('part_notes', 'action', "TEXT NOT NULL DEFAULT 'NOTE'");
 
 module.exports = db;

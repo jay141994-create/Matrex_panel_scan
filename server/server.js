@@ -265,26 +265,69 @@ app.post('/parts/match', deviceGate, (req, res) => {
 // gate differs, matching how every other write in this system is split.
 const NOTE_CATEGORIES = ['DAMAGE', 'DEFECT', 'SCRATCH', 'BENT', 'INCORRECT', 'DENT', 'COLOUR_MISMATCH', 'MISSING_COMPONENT', 'OTHER'];
 const insertNote = db.prepare(`
-  INSERT INTO part_notes (unique_id, category, note, device_id, device, created_at)
-  VALUES (@unique_id, @category, @note, @device_id, @device, @now)
+  INSERT INTO part_notes (unique_id, category, note, action, device_id, device, created_at)
+  VALUES (@unique_id, @category, @note, @action, @device_id, @device, @now)
 `);
 const listNotes = db.prepare('SELECT * FROM part_notes WHERE unique_id = ? ORDER BY id DESC');
+
+// Shared by both the plain note-add and the void-reason path below —
+// same category/text validation either way, only the caller differs.
+function validateNoteInput(uid, cat, note) {
+  if (!uid || !getMatchIndex.get(uid)) return 'unknown unique_id';
+  if (!NOTE_CATEGORIES.includes(cat)) return 'invalid category';
+  if (cat === 'OTHER' && !String(note || '').trim()) return 'note text required for OTHER';
+  return null;
+}
 
 function addNote(req, res) {
   const { unique_id, category, note, device_id, device } = req.body || {};
   const uid = String(unique_id || '').trim();
   const cat = String(category || '').trim().toUpperCase();
-  if (!uid || !getMatchIndex.get(uid)) return res.status(400).json({ ok: false, error: 'unknown unique_id' });
-  if (!NOTE_CATEGORIES.includes(cat)) return res.status(400).json({ ok: false, error: 'invalid category' });
-  if (cat === 'OTHER' && !String(note || '').trim()) return res.status(400).json({ ok: false, error: 'note text required for OTHER' });
+  const err = validateNoteInput(uid, cat, note);
+  if (err) return res.status(400).json({ ok: false, error: err });
 
   const now = new Date().toISOString();
-  insertNote.run({ unique_id: uid, category: cat, note: note || null, device_id: device_id || null, device: device || null, now });
+  insertNote.run({ unique_id: uid, category: cat, note: note || null, action: 'NOTE', device_id: device_id || null, device: device || null, now });
   res.json({ ok: true, notes: listNotes.all(uid) });
 }
 
 app.post('/parts/notes', deviceGate, addNote);
 app.post('/admin/api/parts/notes', requireAdmin, addNote);
+
+// ── VOID — reuses the exact same category+text reason capture as a
+// note (written to part_notes with action='VOID' so the reason has a
+// permanent record), plus flips parts_index.void='Yes'. One-directional
+// by design: un-voiding a mistake is a deliberate admin/DB action, not
+// exposed here, so voiding stays a real decision rather than a toggle.
+const voidPartsIndex = db.prepare(`
+  UPDATE parts_index SET void='Yes', voided_at=@now, voided_by_device=@device_id
+  WHERE unique_id=@unique_id
+`);
+
+function voidPart(req, res) {
+  const { unique_id, category, note, device_id, device } = req.body || {};
+  const uid = String(unique_id || '').trim();
+  const cat = String(category || '').trim().toUpperCase();
+  const err = validateNoteInput(uid, cat, note);
+  if (err) return res.status(400).json({ ok: false, error: err });
+  const idx = getMatchIndex.get(uid);
+  if (idx.void === 'Yes') return res.status(400).json({ ok: false, error: 'already voided' });
+
+  const now = new Date().toISOString();
+  db.exec('BEGIN');
+  try {
+    voidPartsIndex.run({ now, device_id: device_id || null, unique_id: uid });
+    insertNote.run({ unique_id: uid, category: cat, note: note || null, action: 'VOID', device_id: device_id || null, device: device || null, now });
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+  res.json({ ok: true, index: getMatchIndex.get(uid), notes: listNotes.all(uid) });
+}
+
+app.post('/parts/void', deviceGate, voidPart);
+app.post('/admin/api/parts/void', requireAdmin, voidPart);
 
 app.get('/parts/:id/notes', (req, res) => {
   // Read-only, low-sensitivity (same data an approved device already
@@ -301,6 +344,46 @@ app.get('/admin/api/parts/:id', requireAdmin, (req, res) => {
   if (!idx) return res.json({ ok: true, found: false });
   const detail = idx.department === 'PANEL' ? getMatchPanel.get(uid) : null;
   res.json({ ok: true, found: true, index: idx, detail, notes: listNotes.all(uid) });
+});
+
+// ── REPORTING — admin-key gated, read-only. Three separate small
+// queries rather than one mega-endpoint, since the dashboard renders
+// and CSV-exports each section independently.
+const reportRegistry = db.prepare(`
+  SELECT department,
+         COUNT(*) AS total,
+         SUM(scanned='Yes') AS scanned,
+         SUM(scanned='No')  AS never_scanned,
+         SUM(void='Yes')    AS voided
+  FROM parts_index GROUP BY department
+`);
+const reportMatchStatus = db.prepare(`
+  SELECT COALESCE(match_status,'(none)') AS match_status, COUNT(*) AS c
+  FROM scans GROUP BY match_status ORDER BY c DESC
+`);
+app.get('/admin/api/report/summary', requireAdmin, (req, res) => {
+  res.json({ ok: true, registry: reportRegistry.all(), match_status: reportMatchStatus.all() });
+});
+
+app.get('/admin/api/report/daily', requireAdmin, (req, res) => {
+  // Defaults to the last 30 days (by scans.date, already indexed) if no
+  // explicit range is given.
+  const to = req.query.to || new Date().toISOString().slice(0, 10);
+  const from = req.query.from || new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
+  const rows = db.prepare(`
+    SELECT date, COALESCE(match_status,'(none)') AS match_status, COUNT(*) AS c
+    FROM scans WHERE date BETWEEN ? AND ?
+    GROUP BY date, match_status ORDER BY date
+  `).all(from, to);
+  res.json({ ok: true, from, to, rows });
+});
+
+app.get('/admin/api/report/notes', requireAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT category, action, COUNT(*) AS c
+    FROM part_notes GROUP BY category, action ORDER BY c DESC
+  `).all();
+  res.json({ ok: true, rows });
 });
 
 const PORT = process.env.PORT || 8765;
