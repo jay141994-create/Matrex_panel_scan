@@ -1,0 +1,3 @@
+matrex-scan.duckdns.org {
+	reverse_proxy localhost:8765
+}

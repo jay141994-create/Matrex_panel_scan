@@ -56,10 +56,16 @@
     <input id="key" type="password" placeholder="Admin key">
     <button onclick="saveKey()">Connect</button>
   </div>
+  <div class="card">
+    <div>
+      <div class="name">Receiver URL for phones (permanent)</div>
+      <div class="meta">https://matrex-scan.duckdns.org — set this once in each phone's Settings, it no longer changes.</div>
+    </div>
+  </div>
   <div class="card" id="tunnelCard" style="display:none">
     <div>
-      <div class="name">Current Receiver URL</div>
-      <div class="meta">This is what goes in each phone's Settings → Receiver URL. It changes when the tunnel restarts (roughly every 1–2 hours) — always check here, never rely on a written-down value.</div>
+      <div class="name">Legacy Cloudflare tunnel URL (not used by phones anymore)</div>
+      <div class="meta">Kept running as a fallback path only. Do not enter this in a phone's Settings — use the permanent URL above instead.</div>
       <div class="meta" id="tunnelUrl" style="font-weight:700;color:var(--gray-900);margin-top:4px">Loading…</div>
     </div>
     <div class="acts"><button class="secondary" onclick="copyTunnelUrl()">Copy</button></div>
