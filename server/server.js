@@ -67,6 +67,21 @@ function deviceGate(req, res, next) {
 
 app.get('/health', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 
+// The free Cloudflare quick tunnel gets a brand-new random URL every time
+// watchdog.ps1 restarts it (observed roughly every 1-2 hours) — reading
+// the same file the watchdog writes means whoever's looking (the admin
+// dashboard) always sees the real current URL instead of one that was
+// only accurate at the moment someone last wrote it down somewhere.
+const TUNNEL_URL_PATH = path.join(__dirname, 'current-tunnel-url.txt');
+app.get('/admin/api/tunnel-url', requireAdmin, (req, res) => {
+  try {
+    const url = fs.readFileSync(TUNNEL_URL_PATH, 'utf8').trim();
+    res.json({ ok: true, url: url || null });
+  } catch (e) {
+    res.json({ ok: true, url: null });
+  }
+});
+
 app.post('/devices/register', (req, res) => {
   const { device_id, device_name } = req.body || {};
   if (!device_id) return res.status(400).json({ ok: false, error: 'device_id required' });
