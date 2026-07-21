@@ -32,6 +32,23 @@ if (fs.existsSync(INGEST_KEY_PATH)) {
   console.log('Generated new ingest key — see server/data/ingest-key.txt');
 }
 
+// ── VIEWER KEY — separate from the admin key, scoped read-only to the
+// Batch Status tab (phone app + web). A human types this on a phone, so
+// unlike the other two it's a chosen value, not randomly generated. If it
+// ever leaks, the blast radius is "someone can view batch progress," not
+// device approval, voiding, or notes — same narrow-scope principle as the
+// ingest key above.
+const VIEWER_KEY_PATH = path.join(__dirname, 'data', 'viewer-key.txt');
+let VIEWER_KEY;
+if (fs.existsSync(VIEWER_KEY_PATH)) {
+  VIEWER_KEY = fs.readFileSync(VIEWER_KEY_PATH, 'utf8').trim();
+} else {
+  VIEWER_KEY = require('crypto').randomBytes(24).toString('hex');
+  fs.mkdirSync(path.dirname(VIEWER_KEY_PATH), { recursive: true });
+  fs.writeFileSync(VIEWER_KEY_PATH, VIEWER_KEY, 'utf8');
+  console.log('Generated new viewer key — see server/data/viewer-key.txt');
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '5mb' })); // /upload carries the whole day's rows
@@ -43,6 +60,15 @@ function requireAdmin(req, res, next) {
 }
 function requireIngest(req, res, next) {
   if (req.get('X-Ingest-Key') !== INGEST_KEY) return res.status(401).json({ ok: false, error: 'bad ingest key' });
+  next();
+}
+// Admins get in too, so they aren't forced to juggle a second credential.
+function requireViewer(req, res, next) {
+  const viewerKey = req.get('X-Viewer-Key');
+  const adminKey = req.get('X-Admin-Key');
+  if (viewerKey !== VIEWER_KEY && adminKey !== ADMIN_KEY) {
+    return res.status(401).json({ ok: false, error: 'bad viewer key' });
+  }
   next();
 }
 
@@ -399,6 +425,45 @@ app.get('/admin/api/report/notes', requireAdmin, (req, res) => {
     FROM part_notes GROUP BY category, action ORDER BY c DESC
   `).all();
   res.json({ ok: true, rows });
+});
+
+// ── BATCH STATUS — read-only, viewer-key gated. Powers the phone app's
+// Batch Status tab: pick a batch, see every label's real-time status. Pure
+// join of parts_panel (write-once from Excel) + parts_index (the only
+// place status/scanned/void actually live) — no new table, nothing here
+// mutates anything.
+app.get('/viewer/api/batches', requireViewer, (req, res) => {
+  const rows = db.prepare(`
+    SELECT pp.batch, COUNT(*) AS total,
+           SUM(pi.scanned='Yes') AS scanned,
+           SUM(pi.void='Yes') AS voided
+    FROM parts_panel pp JOIN parts_index pi ON pi.unique_id = pp.unique_id
+    WHERE pp.batch IS NOT NULL AND pp.batch != ''
+    GROUP BY pp.batch ORDER BY pp.batch DESC
+  `).all();
+  res.json({ ok: true, batches: rows });
+});
+
+app.get('/viewer/api/batches/:batch', requireViewer, (req, res) => {
+  const rows = db.prepare(`
+    SELECT pi.unique_id, pp.tag, pp.project, pp.floor, pp.part_type,
+           pp.width, pp.height, pp.qty, pp.colour,
+           pi.scanned, pi.scanned_at, pi.scanned_by_device,
+           pi.void, pi.voided_at,
+           (SELECT COUNT(*) FROM part_notes pn WHERE pn.unique_id = pi.unique_id) AS note_count
+    FROM parts_panel pp JOIN parts_index pi ON pi.unique_id = pp.unique_id
+    WHERE pp.batch = ?
+    ORDER BY pi.scanned ASC, pp.tag ASC
+  `).all(req.params.batch);
+  res.json({ ok: true, batch: req.params.batch, labels: rows });
+});
+
+// Read-only notes lookup for the Batch Status label-detail modal. Deliberately
+// not the same route as GET /parts/:id/notes (device-approval gated) — the
+// viewer key must work from a computer that's never scanned anything and so
+// was never registered as a device, not just from an approved phone.
+app.get('/viewer/api/parts/:id/notes', requireViewer, (req, res) => {
+  res.json({ ok: true, notes: listNotes.all(req.params.id) });
 });
 
 const PORT = process.env.PORT || 8765;
