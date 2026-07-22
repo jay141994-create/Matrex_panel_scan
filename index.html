@@ -607,10 +607,10 @@ let skidTarget=null,delTarget=null,pendingDup=null;
 let nextMidnightUpload=null,engineLabel='Starting…';
 // General buffer between any two accepted scans, and how long an identical
 // code specifically stays blocked after being scanned — separate constants
-// (even though both start at the same 1s value) so either can be tuned
-// independently later without the other silently changing too.
-const SCAN_COOLDOWN_MS=1000;
-const SAME_CODE_COOLDOWN_MS=1000;
+// (even though both currently share the same 2s value) so either can be
+// tuned independently later without the other silently changing too.
+const SCAN_COOLDOWN_MS=2000;
+const SAME_CODE_COOLDOWN_MS=2000;
 let lastScanVal='',lastScanTime=0;
 let codeReader=null,controls=null,trackRef=null,torchOn=false;
 
