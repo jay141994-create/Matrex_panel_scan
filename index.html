@@ -605,8 +605,13 @@ function registerDevice(url){
 let scans=[],currentSkid=null,today=todayStr(),viewDate=today,syncedCount=0;
 let skidTarget=null,delTarget=null,pendingDup=null;
 let nextMidnightUpload=null,engineLabel='Starting…';
-let lastVal='',lastTime=0;
-const DEBOUNCE_MS=2000;
+// General buffer between any two accepted scans, and how long an identical
+// code specifically stays blocked after being scanned — separate constants
+// (even though both start at the same 1s value) so either can be tuned
+// independently later without the other silently changing too.
+const SCAN_COOLDOWN_MS=1000;
+const SAME_CODE_COOLDOWN_MS=1000;
+let lastScanVal='',lastScanTime=0;
 let codeReader=null,controls=null,trackRef=null,torchOn=false;
 
 // ── DATA ──────────────────────────────────────────────────
@@ -798,6 +803,69 @@ async function toggleTorch(){
 }
 $('torchBtn').addEventListener('click',toggleTorch);
 
+// ── SCAN REGION (ROI) ──────────────────────────────────────
+// ZXing decodes the *entire* camera frame (decodeFromConstraints has no
+// built-in concept of "only this sub-region") — deliberately not switched
+// to a canvas-cropping approach to restrict what's fed to the decoder,
+// since this file's own history notes that was tried before and was
+// unreliable on Android. Instead, a successful decode's detected position
+// is checked against the visible #aim box *after the fact*, and ignored
+// (treated exactly like no barcode found) if it falls outside — same
+// effect for the user, without touching the proven decode path.
+//
+// Pure/testable: takes plain numbers, no DOM/ZXing objects, so the
+// geometry itself can be unit-tested independent of a real camera.
+function mapPointToDisplayFraction(px,py,videoW,videoH,dispW,dispH){
+  if(!videoW||!videoH||!dispW||!dispH)return null;
+  const scale=Math.max(dispW/videoW,dispH/videoH); // object-fit:cover
+  const scaledW=videoW*scale,scaledH=videoH*scale;
+  const offsetX=(scaledW-dispW)/2,offsetY=(scaledH-dispH)/2; // centered crop
+  return{x:(px*scale-offsetX)/dispW,y:(py*scale-offsetY)/dispH};
+}
+// Matches #aim's own CSS (left:5%;right:5%;top:15%;bottom:15%) exactly —
+// if that box ever moves, update both together.
+const AIM_BOX={xMin:.05,xMax:.95,yMin:.15,yMax:.85};
+function isInAimBox(frac){
+  return frac.x>=AIM_BOX.xMin&&frac.x<=AIM_BOX.xMax&&frac.y>=AIM_BOX.yMin&&frac.y<=AIM_BOX.yMax;
+}
+// Fails OPEN if result points aren't available (accepts the scan) —
+// geometry is a refinement on a working decode, not a second gate that
+// can silently break scanning if a format/library version ever omits
+// points. Any unexpected error in here also falls back to accepting.
+function resultInAimBox(result,videoEl){
+  try{
+    const points=result.getResultPoints&&result.getResultPoints();
+    if(!points||!points.length)return true;
+    let sx=0,sy=0,n=0;
+    for(const p of points){
+      const x=typeof p.getX==='function'?p.getX():p.x;
+      const y=typeof p.getY==='function'?p.getY():p.y;
+      if(typeof x!=='number'||typeof y!=='number')continue;
+      sx+=x;sy+=y;n++;
+    }
+    if(!n)return true;
+    const rect=videoEl.getBoundingClientRect(); // live size — the preview height is user-adjustable
+    const frac=mapPointToDisplayFraction(sx/n,sy/n,videoEl.videoWidth,videoEl.videoHeight,rect.width,rect.height);
+    return frac?isInAimBox(frac):true;
+  }catch(e){return true;}
+}
+
+// ── SCAN COOLDOWN ─────────────────────────────────────────
+// Extracted as its own function (rather than left inline in the decode
+// callback) so the debounce decision is independently testable. Gated at
+// decode time, synchronously — not after handleScan's async network
+// round-trip finishes — so a second decode can't start a second
+// handleScan() while the first is still in flight, no matter how slow
+// that request is. Mutates lastScanVal/lastScanTime as a side effect when
+// a scan is accepted; returns the code to process, or '' if this decode
+// should be ignored (too soon, or an identical repeat too soon).
+function shouldAcceptScan(raw,now){
+  if(now-lastScanTime<SCAN_COOLDOWN_MS)return'';
+  if(raw===lastScanVal&&now-lastScanTime<SAME_CODE_COOLDOWN_MS)return'';
+  lastScanVal=raw;lastScanTime=now;
+  return raw;
+}
+
 // ── SCANNER — official @zxing/browser pattern ─────────────
 async function startScanner(){
   if(!isSecure()){
@@ -848,7 +916,8 @@ async function startScanner(){
   // instead of idling 500ms between tries — same decode algorithm/hints,
   // just called far more often, so this is pure speed with no accuracy
   // tradeoff. delayBetweenScanSuccess stays short too since our own
-  // DEBOUNCE_MS below already guards against re-committing the same code.
+  // SCAN_COOLDOWN_MS/SAME_CODE_COOLDOWN_MS below already guard against
+  // re-committing too fast or the same code twice.
   codeReader=new ZX.BrowserMultiFormatReader(hints,{delayBetweenScanAttempts:0,delayBetweenScanSuccess:150});
 
   // Camera permission must be granted once before device labels are
@@ -913,10 +982,9 @@ async function runWithDevice(deviceId){
       :{facingMode:'environment',width:{ideal:1280},height:{ideal:720}};
     controls=await codeReader.decodeFromConstraints({video:videoConstraints},previewElem,(result,error)=>{
       if(result){
-        const now=Date.now();
-        const raw=result.getText();
-        if(raw===lastVal&&now-lastTime<DEBOUNCE_MS)return;
-        lastVal=raw;lastTime=now;
+        if(!resultInAimBox(result,previewElem))return; // detected, but outside the visible scan frame — same as nothing found
+        const raw=shouldAcceptScan(result.getText(),Date.now());
+        if(!raw)return;
         setEngine('Got scan! Resuming…','ready');
         setTimeout(()=>setEngine('Scanning…','scanning'),1200);
         handleRaw(raw,'SCAN');
@@ -1460,13 +1528,15 @@ function renderBatchList(q){
   q=(q||'').trim().toUpperCase();
   const rows=q?batchListCache.filter(b=>b.batch.toUpperCase().includes(q)):batchListCache;
   if(!rows.length){$('batchContent').innerHTML='<div class="empty-box"><div class="et">'+(q?'No matches':'No batches registered yet')+'</div></div>';return;}
-  $('batchContent').innerHTML=rows.map(b=>{
-    const pct=b.total?Math.round((b.scanned/b.total)*100):0;
-    return`<div class="batch-row" onclick="openBatchDetailScreen('${esc(b.batch)}')">
-      <div class="batch-row-top"><div class="batch-name">${esc(b.batch)}</div><div class="batch-count">${b.scanned}/${b.total}${b.voided?' · '+b.voided+' void':''}</div></div>
-      <div class="batch-bar"><div class="batch-bar-fill" style="width:${pct}%"></div></div>
-    </div>`;
-  }).join('');
+  // Name + total count only for now — scanned/voided breakdown and the
+  // progress bar are hidden, not removed: batchListCache (from
+  // GET /viewer/api/batches) still carries every field, so restoring the
+  // fuller view later is just re-editing this template, not a data change.
+  $('batchContent').innerHTML=rows.map(b=>
+    `<div class="batch-row" onclick="openBatchDetailScreen('${esc(b.batch)}')">
+      <div class="batch-row-top"><div class="batch-name">${esc(b.batch)}</div><div class="batch-count">${b.total} item${b.total===1?'':'s'}</div></div>
+    </div>`
+  ).join('');
 }
 window.openBatchDetailScreen=function(batch){
   batchView='detail';
